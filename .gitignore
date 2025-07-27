@@ -1,0 +1,16 @@
+# Emacs backup files
+*~
+\#*\#
+.\#*
+
+# Compiled Emacs Lisp files
+*.elc
+
+# Other common patterns
+.DS_Store
+
+# Local pre-commit config
+.pre-commit-config.yaml
+
+# Experimental sockets/MCP directory
+sockets-mcp/
