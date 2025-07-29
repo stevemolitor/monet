@@ -197,28 +197,32 @@ Searches all sessions for the deferred response."
   "Clean up diff session for TAB-NAME in SESSION."
   (let ((opened-diffs (monet--session-opened-diffs session)))
     (when-let ((diff-info (gethash tab-name opened-diffs)))
-      (let ((old-temp-buffer (alist-get 'old-temp-buffer diff-info))
-            (new-temp-buffer (alist-get 'new-temp-buffer diff-info))
-            (diff-buffer (alist-get 'diff-buffer diff-info))
+      (let ((diff-buffer (alist-get 'diff-buffer diff-info))
             (kill-buffer-query-functions nil))
-        ;; Kill the diff buffer and close its window
+        ;; Get temp buffers from diff buffer's local variables
         (when (and diff-buffer (buffer-live-p diff-buffer))
-          (let ((diff-window (get-buffer-window diff-buffer)))
+          (let ((old-temp-buffer nil)
+                (new-temp-buffer nil))
+            ;; Extract buffer-local variables before killing diff buffer
             (with-current-buffer diff-buffer
+              (setq old-temp-buffer monet--diff-old-temp-buffer)
+              (setq new-temp-buffer monet--diff-new-temp-buffer)
               (set-buffer-modified-p nil))
-            (when diff-window
-              (delete-window diff-window)))
-          (kill-buffer diff-buffer))
-        ;; Kill the new temporary buffer
-        (when (and new-temp-buffer (buffer-live-p new-temp-buffer))
-          (with-current-buffer new-temp-buffer
-            (set-buffer-modified-p nil))
-          (kill-buffer new-temp-buffer))
-        ;; Kill the old temporary buffer
-        (when (and old-temp-buffer (buffer-live-p old-temp-buffer))
-          (with-current-buffer old-temp-buffer
-            (set-buffer-modified-p nil))
-          (kill-buffer old-temp-buffer))
+            ;; Kill the diff buffer and close its window
+            (let ((diff-window (get-buffer-window diff-buffer)))
+              (when diff-window
+                (delete-window diff-window)))
+            (kill-buffer diff-buffer)
+            ;; Kill the new temporary buffer
+            (when (and new-temp-buffer (buffer-live-p new-temp-buffer))
+              (with-current-buffer new-temp-buffer
+                (set-buffer-modified-p nil))
+              (kill-buffer new-temp-buffer))
+            ;; Kill the old temporary buffer
+            (when (and old-temp-buffer (buffer-live-p old-temp-buffer))
+              (with-current-buffer old-temp-buffer
+                (set-buffer-modified-p nil))
+              (kill-buffer old-temp-buffer))))
         ;; Remove from opened diffs
         (remhash tab-name opened-diffs)))))
 
@@ -877,6 +881,13 @@ Returns deferred response indicator."
         ;; Store tab-name and session for quit handling
         (setq-local monet--diff-tab-name tab-name)
         (setq-local monet--diff-session session)
+        ;; Store all diff-related info as buffer-local variables
+        (setq-local monet--diff-old-temp-buffer old-temp-buffer)
+        (setq-local monet--diff-new-temp-buffer new-temp-buffer)
+        (setq-local monet--diff-old-file-path old-file-path)
+        (setq-local monet--diff-new-file-path new-file-path)
+        (setq-local monet--diff-new-contents new-file-contents)
+        (setq-local monet--diff-file-exists file-exists)
         
         ;; Add keybinding for accepting changes
         (local-set-key (kbd "y") 'monet--handle-diff-accept)
@@ -891,18 +902,10 @@ Returns deferred response indicator."
         (when diff-window
           (select-window diff-window)))
       (message "Type \"y\" in the diff buffer to tell Claude to accept changes, or \"q\" to reject the changes")
-      ;; Store diff info for cleanup later
+      ;; Store minimal info in hash table - just enough to find the diff buffer
       (let ((opened-diffs (monet--session-opened-diffs session)))
         (puthash tab-name
-                 `((old-temp-buffer . ,old-temp-buffer)
-                   (new-temp-buffer . ,new-temp-buffer)
-                   (diff-buffer . ,diff-buffer)
-                   (old-file-path . ,old-file-path)
-                   (new-file-path . ,new-file-path)
-                   (new-contents . ,new-file-contents)
-                   (file-exists . ,file-exists)
-                   (session . ,session)
-                   (created-at . ,(current-time)))
+                 `((diff-buffer . ,diff-buffer))
                  opened-diffs))))
   ;; Return deferred response indicator
   `((deferred . t)
@@ -936,7 +939,9 @@ SESSION is the monet session for tracking opened diffs."
                         (gethash tab-name opened-diffs))))
       (if diff-info
           ;; This is a diff tab - complete the deferred response and clean up
-          (let ((new-contents (alist-get 'new-contents diff-info)))
+          (let* ((diff-buffer (alist-get 'diff-buffer diff-info))
+                 (new-contents (when (and diff-buffer (buffer-live-p diff-buffer))
+                                 (buffer-local-value 'monet--diff-new-contents diff-buffer))))
             ;; Complete the deferred response to save the diff
             (monet--complete-deferred-response
              tab-name
@@ -1182,41 +1187,39 @@ This function applies the changes, sends a FILE_SAVED response, and cleans up."
     (setq-local monet--diff-cleanup-done t)
     (let* ((tab-name monet--diff-tab-name)
            (session monet--diff-session)
-           (opened-diffs (monet--session-opened-diffs session))
-           (diff-info (gethash tab-name opened-diffs)))
-      (when diff-info
-        (let ((new-contents (alist-get 'new-contents diff-info))
-              (old-file-path (alist-get 'old-file-path diff-info))
-              (file-exists (alist-get 'file-exists diff-info)))
-          ;; Clean up the diff first
-          (monet--cleanup-diff tab-name session)
-          
-          ;; Defer the file write and response until after Emacs is idle
-          ;; This ensures the diff is fully closed before Claude receives the response
-          (let ((captured-new-contents new-contents)
-                (captured-old-file-path old-file-path)
-                (captured-tab-name tab-name))
-            (run-with-idle-timer 0 nil
-                                 (lambda ()
-                                   ;; Don't save the file - let Claude handle the actual file modification
-                                   ;; Just send the content that should be saved
-                                   
-                                   ;; Send FILE_SAVED response
-                                   (monet--complete-deferred-response
-                                    captured-tab-name
-                                    (list (list (cons 'type "text")
-                                                (cons 'text "FILE_SAVED"))
-                                          (list (cons 'type "text")
-                                                (cons 'text captured-new-contents))))
-                                   
-                                   (monet--status-message "Claude is applying the changes…"))))
-          
-          ;; Update the selection after a short delay
-          (when-let ((client (monet--session-client session)))
-            (run-with-timer 0.1 nil
-                            (lambda ()
-                              ;; Send the selection
-                              (monet--send-selection client)))))))))
+           ;; Get all info from buffer-local variables
+           (new-contents monet--diff-new-contents)
+           (old-file-path monet--diff-old-file-path)
+           (file-exists monet--diff-file-exists))
+      ;; Clean up the diff first
+      (monet--cleanup-diff tab-name session)
+      
+      ;; Defer the file write and response until after Emacs is idle
+      ;; This ensures the diff is fully closed before Claude receives the response
+      (let ((captured-new-contents new-contents)
+            (captured-old-file-path old-file-path)
+            (captured-tab-name tab-name))
+        (run-with-idle-timer 0 nil
+                             (lambda ()
+                               ;; Don't save the file - let Claude handle the actual file modification
+                               ;; Just send the content that should be saved
+                               
+                               ;; Send FILE_SAVED response
+                               (monet--complete-deferred-response
+                                captured-tab-name
+                                (list (list (cons 'type "text")
+                                            (cons 'text "FILE_SAVED"))
+                                      (list (cons 'type "text")
+                                            (cons 'text captured-new-contents))))
+                               
+                               (monet--status-message "Claude is applying the changes…")))
+      
+      ;; Update the selection after a short delay
+      (when-let ((client (monet--session-client session)))
+        (run-with-timer 0.1 nil
+                        (lambda ()
+                          ;; Send the selection
+                          (monet--send-selection client))))))))
 
 (defun monet--handle-diff-quit ()
   "Handle when user quits a diff buffer by pressing 'q'.
