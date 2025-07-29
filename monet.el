@@ -38,6 +38,28 @@ Set to nil to not bind any prefix key."
                  (const :tag "No prefix key" nil))
   :group 'monet)
 
+(defgroup monet-tool nil
+  "Tool configuration for Monet."
+  :group 'monet
+  :prefix "monet-")
+
+(defcustom monet-diff-tool 'monet-simple-diff-tool
+  "Function to use for creating diff displays.
+The function should have the signature:
+  (old-file-path new-file-path new-file-contents on-accept on-quit)
+where ON-ACCEPT and ON-QUIT are no-argument callbacks.
+It should return the created diff buffer."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-cleanup-diff-tool 'monet-simple-diff-cleanup-tool
+  "Function to use for cleaning up diff displays.
+The function should have the signature:
+  (diff-buffer)
+where DIFF-BUFFER is the buffer created by `monet-diff-tool'."
+  :type 'function
+  :group 'monet-tool)
+
 ;;; Constants
 (defconst monet-version "0.0.1")
 (defconst monet--port-min 10000 "Minimum port number for WebSocket server.")
@@ -199,7 +221,7 @@ Searches all sessions for the deferred response."
     (when-let ((diff-info (gethash tab-name opened-diffs)))
       (let ((diff-buffer (alist-get 'diff-buffer diff-info)))
         ;; Use the simple diff cleanup function
-        (monet-simple-diff-cleanup diff-buffer)
+        (funcall monet-cleanup-diff-tool diff-buffer)
         ;; Remove from opened diffs
         (remhash tab-name opened-diffs)))))
 
@@ -616,7 +638,7 @@ _SESSION is the MCP session (unused for this tool)."
                                                     (isEmpty . t)))))))))))
 
 
-;;; MCP Implementation
+;;; MCP Over Websockets Implementation
 
 ;; Tool definitions
 (defun monet--get-tools-list ()
@@ -886,10 +908,10 @@ Returns the diff buffer."
       ;; Return the diff buffer
       diff-buffer)))
 
-(defun monet-simple-diff-cleanup (diff-buffer)
+(defun monet-simple-diff-cleanup-tool (diff-buffer)
   "Clean up DIFF-BUFFER and its associated temporary buffers.
 
-DIFF-BUFFER is the buffer created by `monet-simple-diff-tool'."
+DIFF-BUFFER is the buffer created by `monet-diff-tool'."
   (when (and diff-buffer (buffer-live-p diff-buffer))
     (let ((old-temp-buffer nil)
           (new-temp-buffer nil)
@@ -998,8 +1020,8 @@ Returns deferred response indicator."
                               (lambda ()
                                 (monet--ping client)
                                 (monet--send-selection client))))))
-         ;; Create the diff using the simple diff tool
-         (diff-buffer (monet-simple-diff-tool old-file-path new-file-path
+         ;; Create the diff using the configured diff tool
+         (diff-buffer (funcall monet-diff-tool old-file-path new-file-path
                                               new-file-contents on-accept on-quit)))
     ;; Store session-specific info in the diff buffer
     (with-current-buffer diff-buffer
