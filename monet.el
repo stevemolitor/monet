@@ -168,6 +168,74 @@ where DIFF-BUFFER is the buffer created by `monet-diff-tool'."
      (error "Error creating lockfile: %s" (error-message-string err))
      (signal (car err) (cdr err)))))
 
+(defun monet--get-mime-type (file-path)
+  "Return the MIME type for FILE-PATH based on its extension."
+  (let ((extension (file-name-extension file-path)))
+    (pcase extension
+      ;; Text files
+      ("txt" "text/plain")
+      ("md" "text/markdown")
+      ("org" "text/org")
+      ("rst" "text/x-rst")
+      ;; Programming languages
+      ("el" "text/x-elisp")
+      ("lisp" "text/x-lisp")
+      ("scm" "text/x-scheme")
+      ("clj" "text/x-clojure")
+      ("py" "text/x-python")
+      ("js" "text/javascript")
+      ("jsx" "text/jsx")
+      ("ts" "text/typescript")
+      ("tsx" "text/tsx")
+      ("java" "text/x-java")
+      ("c" "text/x-c")
+      ("cpp" "text/x-c++")
+      ("cc" "text/x-c++")
+      ("cxx" "text/x-c++")
+      ("h" "text/x-c")
+      ("hpp" "text/x-c++")
+      ("cs" "text/x-csharp")
+      ("go" "text/x-go")
+      ("rs" "text/x-rust")
+      ("rb" "text/x-ruby")
+      ("php" "text/x-php")
+      ("swift" "text/x-swift")
+      ("kt" "text/x-kotlin")
+      ("scala" "text/x-scala")
+      ("r" "text/x-r")
+      ("lua" "text/x-lua")
+      ("perl" "text/x-perl")
+      ("pl" "text/x-perl")
+      ;; Web files
+      ("html" "text/html")
+      ("htm" "text/html")
+      ("xml" "text/xml")
+      ("css" "text/css")
+      ("scss" "text/x-scss")
+      ("sass" "text/x-sass")
+      ("less" "text/x-less")
+      ;; Config files
+      ("json" "application/json")
+      ("yaml" "text/yaml")
+      ("yml" "text/yaml")
+      ("toml" "text/x-toml")
+      ("ini" "text/x-ini")
+      ("conf" "text/plain")
+      ("config" "text/plain")
+      ;; Shell scripts
+      ("sh" "text/x-sh")
+      ("bash" "text/x-bash")
+      ("zsh" "text/x-zsh")
+      ("fish" "text/x-fish")
+      ;; Build files
+      ("makefile" "text/x-makefile")
+      ("cmake" "text/x-cmake")
+      ;; Documentation
+      ("tex" "text/x-latex")
+      ("latex" "text/x-latex")
+      ;; Default
+      (_ "text/plain"))))
+
 ;;; Session Management
 (defvar monet--sessions (make-hash-table :test 'equal)
   "Hash table mapping claude code buffer names to ide websocket sessions.
