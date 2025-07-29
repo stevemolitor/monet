@@ -436,11 +436,14 @@ Remove SESSION from `monet--sessions'."
            action
            (error-message-string error)))
 
-(defun monet-start-server-in-directory (key dir)
+(defun monet-start-server-in-directory (key directory)
   "Start websocker server for claude process with KEY running in DIR.
 
 Returns the session object."
-  (let* ((port (monet--find-free-port))
+  (unless key
+    (error "no key specified cannot start Monet"))
+  (let* ((dir (expand-file-name directory))
+         (port (monet--find-free-port))
          (auth-token (monet--generate-uuid))
          (session (make-monet--session
                    :key key
@@ -1479,11 +1482,6 @@ FRAME is the websocket frame containing the message."
   "Get the Monet session for KEY, or nil if not found."
   (gethash key monet--sessions))
 
-(defun monet-cleanup-session (key)
-  "Clean up the Monet session for KEY.
-This is an alias for `monet-stop-server' for claude-code.el compatibility."
-  (monet-stop-server key))
-
 ;;; User Commands
 
 (defun monet--make-unique-key (base-key)
@@ -1536,7 +1534,7 @@ Otherwise, use project root if in a project, or current file's directory."
          (unique-key (monet--make-unique-key base-key)))
     (if (gethash unique-key monet--sessions)
         (error "Failed to generate unique key for %s" base-key)
-      (monet-start-server-in-directory unique-key (expand-file-name directory))
+      (monet-start-server-in-directory unique-key directory)
       (message "Started Monet server '%s' in %s" unique-key directory))))
 
 (defun monet-stop-server (key)
