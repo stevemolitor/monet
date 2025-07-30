@@ -11,10 +11,9 @@ _Warning:_ Monet is a work in progress. Expect bugs.
 
 ## Features
 
-- Open and save files in emacs from Claude
-- Send diagnostics from Flymake/Flycheck (and thus LSP) to CLaude
+- Selection context: current selection in Emacs is automatically shared with Claude Code
+- Send diagnostics from Flymake/Flycheck (and thus LSP in LSP modes) to Claude
 - Create diff views in Emacs before Claude applies changes
-- Track text selections in real-time
 - Project-aware session management
 - Multiple concurrent sessions support
 
@@ -99,6 +98,49 @@ With a prefix argument (`C-u C-c m s`), you can manually select a directory.
 ;; Change log buffer name
 (setq monet-log-buffer-name "*My Monet Log*")
 ```
+
+#### Custom Diff Tool
+
+You can customize how Monet displays diffs by providing your own diff tool function:
+
+```elisp
+
+;; TODO - this example was vibe coded and doesn't quite work yet!
+
+;; Example: Using ediff instead of the default diff display
+(defun my-ediff-tool (old-file-path new-file-path new-file-contents on-accept on-quit)
+  "Use ediff to display changes."
+  (let ((old-buffer (find-file-noselect old-file-path))
+        (new-buffer (generate-new-buffer "*monet-new*")))
+    (with-current-buffer new-buffer
+      (insert new-file-contents))
+    
+    ;; Start ediff session
+    (ediff-buffers old-buffer new-buffer
+                   `((ediff-quit-hook . (lambda ()
+                                         (if (y-or-n-p "Accept changes? ")
+                                             (funcall ',on-accept)
+                                           (funcall ',on-quit))
+                                         (kill-buffer ,new-buffer)))))
+    ;; Return the ediff control buffer
+    ediff-control-buffer))
+
+;; Set your custom diff tool
+(setq monet-diff-tool 'my-ediff-tool)
+
+;; Optional: Define a cleanup function for your diff tool
+(defun my-ediff-cleanup (diff-buffer)
+  "Clean up ediff session."
+  (when (and diff-buffer (buffer-live-p diff-buffer))
+    (with-current-buffer diff-buffer
+      (ediff-quit nil))))
+
+(setq monet-cleanup-diff-tool 'my-ediff-cleanup)
+```
+
+To close a diff:
+- For the default diff tool: Press `q` to reject changes or `C-c C-c` to accept
+- For custom tools: Use the tool's normal closing mechanism (e.g., `q` in ediff)
 
 ## How It Works
 

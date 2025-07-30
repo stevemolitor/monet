@@ -74,11 +74,12 @@ where DIFF-BUFFER is the buffer created by `monet-diff-tool'."
   key
   server
   client
+  directory
   port
-  initialized                           ; Whether handshake is complete
-  auth-token                            ; UUID auth token for validation
-  opened-diffs                          ; Hash table of active diff sessions keyed by tab-name
-  deferred-responses                    ; Hash table of deferred responses keyed by unique-key
+  initialized   ; Whether handshake is complete
+  auth-token    ; UUID auth token for validation
+  opened-diffs  ; Hash table of active diff sessions keyed by tab-name
+  deferred-responses ; Hash table of deferred responses keyed by unique-key
   )
 
 ;;; Utility Functions
@@ -440,13 +441,12 @@ Remove SESSION from `monet--sessions'."
   "Start websocker server for claude process with KEY running in DIR.
 
 Returns the session object."
-  (unless key
-    (error "no key specified cannot start Monet"))
   (let* ((dir (expand-file-name directory))
          (port (monet--find-free-port))
          (auth-token (monet--generate-uuid))
          (session (make-monet--session
                    :key key
+                   :directory dir
                    :port port
                    :initialized nil
                    :auth-token auth-token
@@ -483,6 +483,15 @@ Returns the session object."
       (error
        (message "Failed to start MCP server: %s" (error-message-string err))
        nil))))
+
+(defun monet-start-server-function (key directory)
+  "Start a Monet server with KEY in DIRECTORY.
+
+Returns the process environment variables needed to start a Claude
+process that will connect to the Claude server as a list."
+  (let* ((session (monet-start-server-in-directory key default-directory))
+         (port (monet--session-port session)))
+    `("ENABLE_IDE_INTEGRATION=t" ,(format "CLAUDE_CODE_SSE_PORT=%d" port))))
 
 ;;; MCP Protocol Handlers
 
@@ -1534,8 +1543,9 @@ Otherwise, use project root if in a project, or current file's directory."
          (unique-key (monet--make-unique-key base-key)))
     (if (gethash unique-key monet--sessions)
         (error "Failed to generate unique key for %s" base-key)
-      (monet-start-server-in-directory unique-key directory)
-      (message "Started Monet server '%s' in %s" unique-key directory))))
+      (let* ((session (monet--start-server-in-directory unique-key directory))
+             (port (monet--session-port session)))
+        (message "Started Monet server '%s' in %s, listening on port %d" unique-key directory port)))))
 
 (defun monet-stop-server (key)
   "Stop the websocket server for KEY.
@@ -1569,11 +1579,12 @@ sessions. KEY is the session identifier."
     (let ((session-info '()))
       (maphash
        (lambda (key session)
-         (let* ((port (monet--session-port session))
+         (let* ((dir (monet--session-directory session)) 
+                (port (monet--session-port session))
                 (client-connected (if (monet--session-client session) "Yes" "No"))
                 (initialized (if (monet--session-initialized session) "Yes" "No")))
-           (push (format "%-20s Port: %-5d Connected: %-3s Initialized: %s"
-                         key port client-connected initialized)
+           (push (format "%-20s Port: %-5d Connected: %-3s Initialized: %s Directory: %s"
+                         key port client-connected initialized dir)
                  session-info)))
        monet--sessions)
       (with-current-buffer (get-buffer-create "*Monet Sessions*")
@@ -1603,6 +1614,7 @@ sessions. KEY is the session identifier."
 
 (defun monet--cleanup-on-exit ()
   "Clean up all MCP sessions and lockfiles on Emacs exit."
+  ;; [TODO] just use monet-stop-servers directly
   (monet-stop-all-servers))
 
 ;; Register cleanup on Emacs exit
