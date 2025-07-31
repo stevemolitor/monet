@@ -373,6 +373,7 @@ If PARAMS is not provided, uses an empty hash table."
              (method (alist-get 'method message))
              (params (alist-get 'params message)))
         
+        (message "[MONET MESSAGE] Handling method: %s, id: %s" method id)
         (pcase method
           ;; Protocol initialization
           ("initialize"
@@ -628,16 +629,21 @@ Returns deferred response indicator."
            ;; Define quit callback
            (on-quit
             (lambda ()
-              ;; Send DIFF_REJECTED response
+              (message "[MONET QUIT] on-quit callback called for tab: %s" tab-name)
+              ;; Clean up the diff first (same order as on-accept)
+              (monet--cleanup-diff tab-name session)
+              (message "[MONET QUIT] After cleanup - window: %S, buffer: %S" 
+                       (selected-window) (current-buffer))
+              ;; Then send DIFF_REJECTED response
               (monet--complete-deferred-response
                tab-name
                (list (list (cons 'type "text")
                            (cons 'text "DIFF_REJECTED"))
                      (list (cons 'type "text")
                            (cons 'text tab-name))))
+              (message "[MONET QUIT] After complete-deferred-response - window: %S, buffer: %S" 
+                       (selected-window) (current-buffer))
               (monet--status-message "Claude is rejecting the change…")
-              ;; Clean up the diff
-              (monet--cleanup-diff tab-name session)
               ;; Ping and update selection after a short delay
               (when-let ((client (monet--session-client session)))
                 (run-with-timer 0.1 nil
@@ -670,8 +676,20 @@ SESSION is the MCP session."
   "MCP handler for close_tab tool.
 PARAMS contains tab_name.
 SESSION is the MCP session."
-  (let ((tab-name (alist-get 'tab_name params)))
-    (monet--close-tab tab-name session)))
+  (let ((tab-name (alist-get 'tab_name params))
+        (current-window-before (selected-window))
+        (current-buffer-before (current-buffer)))
+    (message "[MONET CLOSE-TAB-HANDLER] Before close-tab - window: %S, buffer: %S"
+             current-window-before current-buffer-before)
+    (let ((result (monet--close-tab tab-name session)))
+      (message "[MONET CLOSE-TAB-HANDLER] After close-tab - window: %S, buffer: %S (returning %S)"
+               (selected-window) (current-buffer) result)
+      ;; Add a hook to see what happens after this function returns
+      (run-with-timer 0.1 nil
+                      (lambda ()
+                        (message "[MONET CLOSE-TAB-HANDLER] 0.1s later - window: %S, buffer: %S"
+                                 (selected-window) (current-buffer))))
+      result)))
 
 (defun monet--tool-open-file-handler (params _session)
   "MCP handler for openFile tool.
@@ -722,6 +740,7 @@ _SESSION is unused."
   (let* ((tool-name (alist-get 'name params))
          (arguments (alist-get 'arguments params))
          (handler (monet--get-tool-handler tool-name)))
+    (message "[MONET TOOLS-CALL] Calling tool: %s (id: %s)" tool-name id)
     (if handler
         (condition-case err
             (let ((result (funcall handler arguments session)))
@@ -1045,7 +1064,6 @@ Returns the diff buffer."
       ;; Display the diff buffer and switch to it
       (let ((diff-window (display-buffer diff-buffer
                                          '((display-buffer-pop-up-window)))))
-        ;; Switch to the diff window
         (when diff-window
           (select-window diff-window)))
       (message "Type \"y\" in the diff buffer to accept changes, or \"q\" to reject")
@@ -1066,9 +1084,15 @@ DIFF-BUFFER is the buffer created by `monet-diff-tool'."
         (setq new-temp-buffer monet--diff-new-temp-buffer)
         (set-buffer-modified-p nil))
       ;; Kill the diff buffer and close its window
-      (let ((diff-window (get-buffer-window diff-buffer)))
+      (let ((diff-window (get-buffer-window diff-buffer))
+            (current-window (selected-window))
+            (current-buffer-before (current-buffer)))
         (when diff-window
-          (delete-window diff-window)))
+          (message "[MONET CLEANUP] Before delete - current window: %S, current buffer: %S, diff window: %S" 
+                   current-window current-buffer-before diff-window)
+          (delete-window diff-window)
+          (message "[MONET CLEANUP] After delete - current window: %S, current buffer: %S" 
+                   (selected-window) (current-buffer))))
       (kill-buffer diff-buffer)
       ;; Kill the new temporary buffer
       (when (and new-temp-buffer (buffer-live-p new-temp-buffer))
@@ -1098,6 +1122,7 @@ Calls the stored on-accept callback."
 (defun monet--generic-diff-quit ()
   "Generic handler for quitting/rejecting diff changes.
 Calls the stored on-quit callback."
+  (interactive)
   (when (and (boundp 'monet--diff-on-quit)
              monet--diff-on-quit
              (not (boundp 'monet--diff-cleanup-done)))
@@ -1126,50 +1151,46 @@ SESSION is the monet session containing opened diffs."
   "Close a tab/buffer by TAB-NAME.
 TAB-NAME is the name of the tab/buffer to close.
 SESSION is the monet session for tracking opened diffs."
-  (cond
-   ;; Handle closing by tab name (check if this is a diff tab first)
-   (tab-name
-    (let* ((opened-diffs (when session
-                           (monet--session-opened-diffs session)))
-           (diff-info (when opened-diffs
-                        (gethash tab-name opened-diffs))))
-      (if diff-info
-          ;; This is a diff tab - complete the deferred response and clean up
-          (let* ((diff-buffer (alist-get 'diff-buffer diff-info))
-                 (new-contents (when (and diff-buffer (buffer-live-p diff-buffer))
-                                 (buffer-local-value 'monet--diff-new-contents diff-buffer))))
-            ;; Complete the deferred response to save the diff
-            (monet--complete-deferred-response
-             tab-name
-             (list (list (cons 'type "text")
-                         (cons 'text "FILE_SAVED"))
-                   (list (cons 'type "text")
-                         (cons 'text new-contents))))
-            
-            ;; Clean up the diff
-            (monet--cleanup-diff tab-name session)
-            ;; Update the selection
-            (when-let ((client (monet--session-client session)))
-              (run-with-timer 0.1 nil
-                              (lambda ()
-                                ;; Send the selection
-                                (monet--send-selection client))))
-            
-            (list `((type . "text")
-                    (text . "TAB_CLOSED")))
-        ;; Not a diff - treat tab_name as regular buffer name
-        (let ((buffer (get-buffer tab-name)))
-          (if buffer
-              (progn
-                (kill-buffer buffer)
-                (list `((type . "text")
-                        (text . "TAB_CLOSED")))
-            (list `((type . "text")
-                    (text . "TAB_NOT_FOUND")))))))
-   ;; No tab name provided
-   (t
-    (list `((type . "text")
-            (text . "NO_TAB_SPECIFIED")))))
+  (message "[MONET CLOSE-TAB] Called with tab-name: %S" tab-name)
+  (if tab-name
+      (let* ((opened-diffs (when session
+                             ;; Handle closing by tab name (check if this is a diff tab first)
+                             (monet--session-opened-diffs session)))
+             (diff-info (when opened-diffs
+                          (gethash tab-name opened-diffs))))
+        (if diff-info
+            ;; This is a diff tab - complete the deferred response and clean up
+            (let* ((diff-buffer (alist-get 'diff-buffer diff-info))
+                   (new-contents (when (and diff-buffer (buffer-live-p diff-buffer))
+                                   (buffer-local-value 'monet--diff-new-contents diff-buffer))))
+              (message "[MONET CLOSE-TAB] Closing diff tab: %S" tab-name)
+              ;; Complete the deferred response to save the diff
+              (monet--complete-deferred-response
+               tab-name
+               (list (list (cons 'type "text")
+                           (cons 'text "FILE_SAVED"))
+                     (list (cons 'type "text")
+                           (cons 'text new-contents))))
+
+              ;; Clean up the diff
+              (monet--cleanup-diff tab-name session)
+              ;; Update the selection
+              (when-let ((client (monet--session-client session)))
+                (run-with-timer 0.1 nil
+                                (lambda ()
+                                  ;; Send the selection
+                                  (monet--send-selection client))))
+              (list `((type . "text")
+                      (text . "TAB_CLOSED"))))
+          ;; Not a diff - DON'T close regular buffers!
+          ;; This is likely Claude trying to close a file buffer, which we should ignore
+          (message "[MONET CLOSE-TAB] Ignoring request to close non-diff tab: %S" tab-name)
+          (list `((type . "text")
+                  (text . "TAB_NOT_DIFF")))))
+    ;; No tab name provided
+    (t
+     (list `((type . "text")
+             (text . "NO_TAB_SPECIFIED"))))))
 
 (defun monet--open-file (uri)
   "Open a file specified by URI.
@@ -1185,33 +1206,16 @@ Returns success or error response."
         ;; Check if file exists
         (unless (file-exists-p file-path)
           (error "File not found: %s" file-path))
-        ;; Open the file and switch to its buffer
+        ;; Open the file - find-file will display it appropriately
+        ;; If the file is already open in a window, it will switch to that window
+        ;; Otherwise it will use the current window
         (find-file file-path)
-        ;; Make sure the buffer is displayed in a window
-        (switch-to-buffer (current-buffer))
         ;; Return success with file information
         (list `((type . "text")
                 (text . "FILE_OPENED"))))
     (error
      (list `((type . "text")
-             (text . ,(format "Error opening file: %s" (error-message-string err))))))))))
-
-(defun monet--save-document (uri)
-  "Save a document to disk.
-URI is the file URI or path to save.
-Returns success or error response."
-  (let* ((file-path (if (string-prefix-p "file://" uri)
-                        (substring uri 7)
-                      uri))
-         (buffer (find-buffer-visiting file-path)))
-    (if buffer
-        (with-current-buffer buffer
-          (save-buffer)
-          (list `((type . "text")
-                  (text . ,(json-encode `((saved . t)))))))
-      (list `((type . "text")
-              (text . ,(json-encode `((saved . :json-false)
-                                      (error . "File not open")))))))))))
+             (text . ,(format "Error opening file: %s" (error-message-string err))))))))
 
 (defun monet--check-document-dirty (uri)
   "Check if a document has unsaved changes.
