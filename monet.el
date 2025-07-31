@@ -373,8 +373,7 @@ If PARAMS is not provided, uses an empty hash table."
              (method (alist-get 'method message))
              (params (alist-get 'params message)))
         
-        (message "[MONET MESSAGE] Handling method: %s, id: %s" method id)
-        (pcase method
+            (pcase method
           ;; Protocol initialization
           ("initialize"
            (monet--handle-initialize session ws id params))
@@ -629,11 +628,8 @@ Returns deferred response indicator."
            ;; Define quit callback
            (on-quit
             (lambda ()
-              (message "[MONET QUIT] on-quit callback called for tab: %s" tab-name)
               ;; Clean up the diff first (same order as on-accept)
               (monet--cleanup-diff tab-name session)
-              (message "[MONET QUIT] After cleanup - window: %S, buffer: %S" 
-                       (selected-window) (current-buffer))
               ;; Then send DIFF_REJECTED response
               (monet--complete-deferred-response
                tab-name
@@ -641,23 +637,7 @@ Returns deferred response indicator."
                            (cons 'text "DIFF_REJECTED"))
                      (list (cons 'type "text")
                            (cons 'text tab-name))))
-              (message "[MONET QUIT] After complete-deferred-response - window: %S, buffer: %S" 
-                       (selected-window) (current-buffer))
-              ;; Add temporary hook to track buffer switches
-              (add-hook 'buffer-list-update-hook
-                        (lambda ()
-                          (message "[MONET BUFFER-SWITCH] Buffer changed to: %S in window: %S"
-                                   (current-buffer) (selected-window)))
-                        nil t)
-              ;; Also add window configuration change hook
-              (add-hook 'window-configuration-change-hook
-                        (lambda ()
-                          (message "[MONET WINDOW-CONFIG] Window config changed - buffer: %S, window: %S"
-                                   (current-buffer) (selected-window)))
-                        nil t)
               (monet--status-message "Claude is rejecting the change…")
-              (message "[MONET QUIT] After status-message - window: %S, buffer: %S" 
-                       (selected-window) (current-buffer))
               ;; Ping and update selection after a short delay
               (when-let ((client (monet--session-client session)))
                 (run-with-timer 0.1 nil
@@ -668,12 +648,8 @@ Returns deferred response indicator."
            (original-buffer (current-buffer))
            (original-window (selected-window))
            (diff-buffer (progn
-                          (message "[MONET DIFF-CREATE] Before creating diff - window: %S, buffer: %S"
-                                   (selected-window) (current-buffer))
                           (funcall monet-diff-tool old-file-path new-file-path
                                                   new-file-contents on-accept on-quit))))
-      (message "[MONET DIFF-CREATE] After creating diff - window: %S, buffer: %S (original was: %S)"
-               (selected-window) (current-buffer) original-buffer)
       ;; Store session-specific info in the diff buffer
       (with-current-buffer diff-buffer
         (setq-local monet--diff-tab-name tab-name)
@@ -700,16 +676,7 @@ SESSION is the MCP session."
   (let ((tab-name (alist-get 'tab_name params))
         (current-window-before (selected-window))
         (current-buffer-before (current-buffer)))
-    (message "[MONET CLOSE-TAB-HANDLER] Before close-tab - window: %S, buffer: %S"
-             current-window-before current-buffer-before)
     (let ((result (monet--close-tab tab-name session)))
-      (message "[MONET CLOSE-TAB-HANDLER] After close-tab - window: %S, buffer: %S (returning %S)"
-               (selected-window) (current-buffer) result)
-      ;; Add a hook to see what happens after this function returns
-      (run-with-timer 0.1 nil
-                      (lambda ()
-                        (message "[MONET CLOSE-TAB-HANDLER] 0.1s later - window: %S, buffer: %S"
-                                 (selected-window) (current-buffer))))
       result)))
 
 (defun monet--tool-open-file-handler (params _session)
@@ -761,7 +728,6 @@ _SESSION is unused."
   (let* ((tool-name (alist-get 'name params))
          (arguments (alist-get 'arguments params))
          (handler (monet--get-tool-handler tool-name)))
-    (message "[MONET TOOLS-CALL] Calling tool: %s (id: %s)" tool-name id)
     (if handler
         (condition-case err
             (let ((result (funcall handler arguments session)))
@@ -1075,13 +1041,35 @@ Returns the diff buffer."
         (setq-local monet--diff-on-accept on-accept)
         (setq-local monet--diff-on-quit on-quit)
         
-        ;; Add keybinding for accepting/rejecting changes
-        (local-set-key (kbd "y") 'monet--generic-diff-accept)
-        (local-set-key (kbd "q") 'monet--generic-diff-quit)
+        ;; Override the default quit-window binding from special-mode/diff-mode
+        ;; We need to completely override the keymap to prevent other modes from interfering
+        (let ((map (make-sparse-keymap)))
+          ;; Copy all bindings from diff-mode-map
+          (set-keymap-parent map diff-mode-map)
+          ;; Override the specific keys we need - use string format for q to ensure it works
+          (define-key map "y" 'monet--generic-diff-accept)
+          (define-key map "q" 'monet--generic-diff-quit)
+          (define-key map (kbd "C-c a") 'monet--generic-diff-quit)
+          ;; Also unbind these in the parent keymaps to be sure
+          (define-key map [remap quit-window] 'monet--generic-diff-quit)
+          (use-local-map map))
         
-        ;; Add hooks for handling quit
-        (add-hook 'quit-window-hook #'monet--generic-diff-quit nil t)
-        (add-hook 'kill-buffer-hook #'monet--generic-diff-quit nil t))
+        ;; Disable quit-window-hook to prevent any interference
+        (setq-local quit-window-hook nil)
+        
+        ;; Also remove any advice on quit-window that might interfere
+        (advice-remove 'quit-window 'monet--generic-diff-quit)
+        
+        ;; Add hook to catch buffer being killed by any means
+        (add-hook 'kill-buffer-hook #'monet--generic-diff-quit nil t)
+        
+        ;; Also add a pre-command hook to catch q before it does anything
+        (add-hook 'pre-command-hook
+                  (lambda ()
+                    (when (and (eq this-command 'self-insert-command)
+                               (eq last-command-event ?q))
+                      (setq this-command 'monet--generic-diff-quit)))
+                  nil t))
       ;; Display the diff buffer and switch to it
       (let ((diff-window (display-buffer diff-buffer
                                          '((display-buffer-pop-up-window)))))
@@ -1106,14 +1094,14 @@ DIFF-BUFFER is the buffer created by `monet-diff-tool'."
         (set-buffer-modified-p nil))
       ;; Kill the diff buffer and close its window
       (let ((diff-window (get-buffer-window diff-buffer))
-            (current-window (selected-window))
-            (current-buffer-before (current-buffer)))
+            (original-window (selected-window)))
         (when diff-window
-          (message "[MONET CLEANUP] Before delete - current window: %S, current buffer: %S, diff window: %S" 
-                   current-window current-buffer-before diff-window)
-          (delete-window diff-window)
-          (message "[MONET CLEANUP] After delete - current window: %S, current buffer: %S" 
-                   (selected-window) (current-buffer))))
+          ;; If we're in the diff window, switch to another window first
+          (when (eq (selected-window) diff-window)
+            ;; Try to select previous window
+            (other-window -1))
+          ;; Delete the diff window
+          (delete-window diff-window)))
       (kill-buffer diff-buffer)
       ;; Kill the new temporary buffer
       (when (and new-temp-buffer (buffer-live-p new-temp-buffer))
@@ -1144,13 +1132,13 @@ Calls the stored on-accept callback."
   "Generic handler for quitting/rejecting diff changes.
 Calls the stored on-quit callback."
   (interactive)
-  (when (and (boundp 'monet--diff-on-quit)
-             monet--diff-on-quit
-             (not (boundp 'monet--diff-cleanup-done)))
-    ;; Set flag to prevent double cleanup
-    (setq-local monet--diff-cleanup-done t)
-    ;; Call the quit callback
-    (funcall monet--diff-on-quit)))
+  (if (not (boundp 'monet--diff-on-quit))
+    (if (not monet--diff-on-quit)
+      (if (boundp 'monet--diff-cleanup-done)
+        ;; Set flag to prevent double cleanup
+        (setq-local monet--diff-cleanup-done t)
+        ;; Call the quit callback
+        (funcall monet--diff-on-quit)))))
 
 
 (defun monet--close-all-diff-tabs (session)
@@ -1172,7 +1160,6 @@ SESSION is the monet session containing opened diffs."
   "Close a tab/buffer by TAB-NAME.
 TAB-NAME is the name of the tab/buffer to close.
 SESSION is the monet session for tracking opened diffs."
-  (message "[MONET CLOSE-TAB] Called with tab-name: %S" tab-name)
   (if tab-name
       (let* ((opened-diffs (when session
                              ;; Handle closing by tab name (check if this is a diff tab first)
@@ -1184,7 +1171,6 @@ SESSION is the monet session for tracking opened diffs."
             (let* ((diff-buffer (alist-get 'diff-buffer diff-info))
                    (new-contents (when (and diff-buffer (buffer-live-p diff-buffer))
                                    (buffer-local-value 'monet--diff-new-contents diff-buffer))))
-              (message "[MONET CLOSE-TAB] Closing diff tab: %S" tab-name)
               ;; Complete the deferred response to save the diff
               (monet--complete-deferred-response
                tab-name
@@ -1205,7 +1191,6 @@ SESSION is the monet session for tracking opened diffs."
                       (text . "TAB_CLOSED"))))
           ;; Not a diff - DON'T close regular buffers!
           ;; This is likely Claude trying to close a file buffer, which we should ignore
-          (message "[MONET CLOSE-TAB] Ignoring request to close non-diff tab: %S" tab-name)
           (list `((type . "text")
                   (text . "TAB_NOT_DIFF")))))
     ;; No tab name provided
