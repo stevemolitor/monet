@@ -643,7 +643,21 @@ Returns deferred response indicator."
                            (cons 'text tab-name))))
               (message "[MONET QUIT] After complete-deferred-response - window: %S, buffer: %S" 
                        (selected-window) (current-buffer))
+              ;; Add temporary hook to track buffer switches
+              (add-hook 'buffer-list-update-hook
+                        (lambda ()
+                          (message "[MONET BUFFER-SWITCH] Buffer changed to: %S in window: %S"
+                                   (current-buffer) (selected-window)))
+                        nil t)
+              ;; Also add window configuration change hook
+              (add-hook 'window-configuration-change-hook
+                        (lambda ()
+                          (message "[MONET WINDOW-CONFIG] Window config changed - buffer: %S, window: %S"
+                                   (current-buffer) (selected-window)))
+                        nil t)
               (monet--status-message "Claude is rejecting the change…")
+              (message "[MONET QUIT] After status-message - window: %S, buffer: %S" 
+                       (selected-window) (current-buffer))
               ;; Ping and update selection after a short delay
               (when-let ((client (monet--session-client session)))
                 (run-with-timer 0.1 nil
@@ -651,8 +665,15 @@ Returns deferred response indicator."
                                   (monet--ping client)
                                   (monet--send-selection client))))))
            ;; Create the diff using the configured diff tool
-           (diff-buffer (funcall monet-diff-tool old-file-path new-file-path
-                                                new-file-contents on-accept on-quit)))
+           (original-buffer (current-buffer))
+           (original-window (selected-window))
+           (diff-buffer (progn
+                          (message "[MONET DIFF-CREATE] Before creating diff - window: %S, buffer: %S"
+                                   (selected-window) (current-buffer))
+                          (funcall monet-diff-tool old-file-path new-file-path
+                                                  new-file-contents on-accept on-quit))))
+      (message "[MONET DIFF-CREATE] After creating diff - window: %S, buffer: %S (original was: %S)"
+               (selected-window) (current-buffer) original-buffer)
       ;; Store session-specific info in the diff buffer
       (with-current-buffer diff-buffer
         (setq-local monet--diff-tab-name tab-name)
@@ -1216,6 +1237,23 @@ Returns success or error response."
     (error
      (list `((type . "text")
              (text . ,(format "Error opening file: %s" (error-message-string err))))))))
+
+(defun monet--save-document (uri)
+  "Save a document to disk.
+URI is the file URI or path to save.
+Returns success or error response."
+  (let* ((file-path (if (string-prefix-p "file://" uri)
+                        (substring uri 7)
+                      uri))
+         (buffer (find-buffer-visiting file-path)))
+    (if buffer
+        (with-current-buffer buffer
+          (save-buffer)
+          (list `((type . "text")
+                  (text . ,(json-encode `((saved . t)))))))
+      (list `((type . "text")
+              (text . ,(json-encode `((saved . :json-false)
+                                      (error . "File not open")))))))))
 
 (defun monet--check-document-dirty (uri)
   "Check if a document has unsaved changes.
