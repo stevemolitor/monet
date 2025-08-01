@@ -604,8 +604,8 @@ Returns deferred response indicator."
               (let* ((new-contents monet--diff-new-contents)
                      (old-file-path monet--diff-old-file-path)
                      (file-exists monet--diff-file-exists))
-                ;; Clean up the diff first
-                (monet--cleanup-diff tab-name session)
+                ;; Mark this as accepted (so close_tab knows what happened)
+                (setq-local monet--diff-accepted t)
                 ;; Defer the response until after Emacs is idle
                 (let ((captured-new-contents new-contents)
                       (captured-old-file-path old-file-path)
@@ -628,9 +628,9 @@ Returns deferred response indicator."
            ;; Define quit callback
            (on-quit
             (lambda ()
-              ;; Clean up the diff first (same order as on-accept)
-              (monet--cleanup-diff tab-name session)
-              ;; Then send DIFF_REJECTED response
+              ;; Mark this as rejected (so close_tab knows what happened)
+              (setq-local monet--diff-accepted nil)
+              ;; Send DIFF_REJECTED response
               (monet--complete-deferred-response
                tab-name
                (list (list (cons 'type "text")
@@ -1167,18 +1167,8 @@ SESSION is the monet session for tracking opened diffs."
              (diff-info (when opened-diffs
                           (gethash tab-name opened-diffs))))
         (if diff-info
-            ;; This is a diff tab - complete the deferred response and clean up
-            (let* ((diff-buffer (alist-get 'diff-buffer diff-info))
-                   (new-contents (when (and diff-buffer (buffer-live-p diff-buffer))
-                                   (buffer-local-value 'monet--diff-new-contents diff-buffer))))
-              ;; Complete the deferred response to save the diff
-              (monet--complete-deferred-response
-               tab-name
-               (list (list (cons 'type "text")
-                           (cons 'text "FILE_SAVED"))
-                     (list (cons 'type "text")
-                           (cons 'text new-contents))))
-
+            ;; This is a diff tab - clean it up
+            (let* ((diff-buffer (alist-get 'diff-buffer diff-info)))
               ;; Clean up the diff
               (monet--cleanup-diff tab-name session)
               ;; Update the selection
