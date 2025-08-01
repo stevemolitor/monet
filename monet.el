@@ -1132,13 +1132,13 @@ Calls the stored on-accept callback."
   "Generic handler for quitting/rejecting diff changes.
 Calls the stored on-quit callback."
   (interactive)
-  (if (not (boundp 'monet--diff-on-quit))
-    (if (not monet--diff-on-quit)
-      (if (boundp 'monet--diff-cleanup-done)
-        ;; Set flag to prevent double cleanup
-        (setq-local monet--diff-cleanup-done t)
-        ;; Call the quit callback
-        (funcall monet--diff-on-quit)))))
+  (when (and (boundp 'monet--diff-on-quit)
+             monet--diff-on-quit
+             (not (boundp 'monet--diff-cleanup-done)))
+    ;; Set flag to prevent double cleanup
+    (setq-local monet--diff-cleanup-done t)
+    ;; Call the quit callback
+    (funcall monet--diff-on-quit)))
 
 
 (defun monet--close-all-diff-tabs (session)
