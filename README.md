@@ -101,46 +101,89 @@ With a prefix argument (`C-u C-c m s`), you can manually select a directory.
 
 #### Custom Diff Tool
 
-You can customize how Monet displays diffs by providing your own diff tool function:
+You can customize how Monet displays diffs by providing your own diff tool function. Diff tools must:
+
+1. Accept parameters: `(old-file-path new-file-path new-file-contents on-accept on-quit)`
+2. Display the diff to the user
+3. Call `on-accept` when the user accepts changes or `on-quit` when they reject
+4. Return a context object (an alist) containing at least a `control-buffer` entry
+
+The context object should contain:
+- `control-buffer` - The main buffer for the diff display (required)
+- `old-temp-buffer` - Temporary buffer with old content (optional, for cleanup)
+- `new-temp-buffer` - Temporary buffer with new content (optional, for cleanup)
+- Additional entries as needed by your tool
+
+Here's a working example using ediff:
 
 ```elisp
-
-;; TODO - this example was vibe coded and doesn't quite work yet!
-
-;; Example: Using ediff instead of the default diff display
 (defun my-ediff-tool (old-file-path new-file-path new-file-contents on-accept on-quit)
-  "Use ediff to display changes."
+  "Use ediff to display changes with context object approach."
   (let ((old-buffer (find-file-noselect old-file-path))
         (new-buffer (generate-new-buffer "*monet-new*")))
     (with-current-buffer new-buffer
       (insert new-file-contents))
     
-    ;; Start ediff session
-    (ediff-buffers old-buffer new-buffer
-                   `((ediff-quit-hook . (lambda ()
-                                         (if (y-or-n-p "Accept changes? ")
-                                             (funcall ',on-accept)
-                                           (funcall ',on-quit))
-                                         (kill-buffer ,new-buffer)))))
-    ;; Return the ediff control buffer
-    ediff-control-buffer))
+    ;; Create the context object that will be returned
+    (let* ((window-config (current-window-configuration))
+           (original-buffer (current-buffer))
+           (context (list (cons 'control-buffer nil)  ; Will be set in startup hook
+                          (cons 'on-accept on-accept)
+                          (cons 'on-quit on-quit)
+                          (cons 'new-buffer new-buffer)
+                          (cons 'window-config window-config)
+                          (cons 'original-buffer original-buffer))))
+      
+      ;; Start ediff with a startup hook to capture the control buffer
+      (ediff-buffers old-buffer new-buffer
+                     (list (lambda ()
+                             ;; Store the control buffer in our context
+                             (setf (alist-get 'control-buffer context) (current-buffer))
+                             ;; Store context for access in hooks
+                             (setq-local monet--diff-context context)
+                             
+                             ;; Define cleanup function
+                             (defun my-janitor ()
+                               (let ((context monet--diff-context))
+                                 (when context
+                                   ;; Call the appropriate callback
+                                   (let ((on-quit (alist-get 'on-quit context)))
+                                     (when (functionp on-quit)
+                                       (funcall on-quit)))
+                                   ;; Clean up
+                                   (let ((new-buffer (alist-get 'new-buffer context)))
+                                     (when (buffer-live-p new-buffer)
+                                       (kill-buffer new-buffer)))
+                                   ;; Restore window configuration
+                                   (let ((window-config (alist-get 'window-config context)))
+                                     (when window-config
+                                       (set-window-configuration window-config)))))
+                               ;; Call ediff's cleanup
+                               (ediff-janitor nil nil))
+                             
+                             ;; Set up the hook
+                             (add-hook 'ediff-cleanup-hook 'my-janitor nil t))))
+      
+      ;; Return the context object
+      context)))
 
 ;; Set your custom diff tool
 (setq monet-diff-tool 'my-ediff-tool)
 
-;; Optional: Define a cleanup function for your diff tool
-(defun my-ediff-cleanup (diff-buffer)
-  "Clean up ediff session."
-  (when (and diff-buffer (buffer-live-p diff-buffer))
-    (with-current-buffer diff-buffer
-      (ediff-quit nil))))
+;; Define a cleanup function that uses the context object
+(defun my-ediff-cleanup (context)
+  "Clean up ediff session using CONTEXT object."
+  (when context
+    (let ((control-buffer (alist-get 'control-buffer context)))
+      (when (and control-buffer (buffer-live-p control-buffer))
+        (with-current-buffer control-buffer
+          (when (functionp 'ediff-quit)
+            (ediff-quit nil)))))))
 
 (setq monet-cleanup-diff-tool 'my-ediff-cleanup)
 ```
 
-To close a diff:
-- For the default diff tool: Press `q` to reject changes or `C-c C-c` to accept
-- For custom tools: Use the tool's normal closing mechanism (e.g., `q` in ediff)
+For simpler diff tools, you can use the built-in `monet-generic-diff-accept` and `monet-generic-diff-quit` functions, which handle the callbacks automatically when bound to keys like `y` and `q`.
 
 ## How It Works
 
