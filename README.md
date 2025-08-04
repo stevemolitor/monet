@@ -101,19 +101,22 @@ With a prefix argument (`C-u C-c m s`), you can manually select a directory.
 
 #### Custom Diff Tool
 
-You can customize how Monet displays diffs by providing your own diff tool function. Diff tools must:
+You can customize how Monet displays diffs by providing your own pair diff tool functions. Set
+`monet-diff-tool` to a function of that takes the following arguments: `old-file-path new-file-path new-file-contents on-accept on-quit`, and set `monet-cleanup-diff-tool` to a function that 
+takes a single context object.
 
-1. Accept parameters: `(old-file-path new-file-path new-file-contents on-accept on-quit)`
-2. Display the diff to the user
-3. Call `on-accept` when the user accepts changes or `on-quit` when they reject
-4. Return a context object (an alist) containing at least a `control-buffer` entry
+Your diff tool function should display the diff to the user and return a context object that will be
+passed to the diff cleanup tool later. Your diff tool should call `on-accept` with no arguments when
+the user accept the changes, and `on-quit` when the user rejects the changes. Do not close your diff
+tool buffers on accept or reject; the diff close tool will do that.
 
-The context object should contain:
-- `control-buffer` - The main buffer for the diff display (required)
-- `old-temp-buffer` - Temporary buffer with old content (optional, for cleanup)
-- `new-temp-buffer` - Temporary buffer with new content (optional, for cleanup)
-- Additional entries as needed by your tool
-
+After calling your diff in response to a Claude request to display the diff tool, Monet monet will
+store the context object returned from your diff tool function in the Monet session. When the user
+accepts or reject and your tool calls the `on-accept` or `on-reject` callbacks, Monet send the
+appropriate message to Claude. Claude will start accepting or rejecting the changes, and then send a
+message to Monet to close the diff tabs. Monet will then call your diff cleanup tool with the
+context object that was returned from your diff tool. Your diff cleanup tool should then kill diff
+buffers and perform necessary cleanup.
 ## How It Works
 
 Monet creates a WebSocket server that Claude Code connects to via MCP. This allows Claude to:
