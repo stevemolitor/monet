@@ -643,9 +643,9 @@ Returns deferred response indicator."
          (tab-name (alist-get 'tab_name params))
          ;; Define accept callback
          (on-accept
-          (lambda ()
+          (lambda (final-contents)
             (interactive)
-            ;; Use values from the closure
+            ;; Use the passed final-contents parameter instead of closure value
             ;; Defer the response until after Emacs is idle
             (run-with-idle-timer 0 nil
                                  (lambda ()
@@ -655,7 +655,7 @@ Returns deferred response indicator."
                                     (list (list (cons 'type "text")
                                                 (cons 'text "FILE_SAVED"))
                                           (list (cons 'type "text")
-                                                (cons 'text new-file-contents))))))
+                                                (cons 'text final-contents))))))
             ;; Update the selection after a short delay
             (when-let ((client (monet--session-client session)))
               (run-with-timer 0.1 nil
@@ -1061,7 +1061,7 @@ Returns the diff context object for later used by the cleanup tool."
           ;; Override the specific keys we need with customizable bindings
           (define-key map (kbd monet-simple-diff-accept-key) (lambda ()
                                                                (interactive)
-                                                               (funcall on-accept)))
+                                                               (funcall on-accept new-file-contents)))
           (define-key map (kbd monet-simple-diff-quit-key) (lambda ()
                                                              (interactive)
                                                              (funcall on-quit)))
@@ -1185,7 +1185,11 @@ Returns the diff context object."
              (local-set-key (kbd monet-ediff-accept-key)
                             (lambda ()
                               (interactive)
-                              (funcall on-accept-callback)))
+                              ;; Get the edited content from buffer B
+                              (let ((edited-content
+                                     (with-current-buffer ediff-buffer-B
+                                       (buffer-substring-no-properties (point-min) (point-max)))))
+                                (funcall on-accept-callback edited-content))))
 
              ;; Override quit key to quit without confirmation
              (local-set-key (kbd monet-ediff-quit-key)
@@ -1768,8 +1772,5 @@ When enabled, provides key bindings for managing Monet sessions.
 
 ;;; Provide monet
 (provide 'monet)
-
-(defun hello ()
-  (message "HELLO"))
 
 ;;; monet.el ends here

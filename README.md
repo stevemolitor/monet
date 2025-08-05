@@ -77,6 +77,22 @@ When `monet-mode` is enabled, the following key bindings are available (default 
 - `C-c m L` - Enable logging
 - `C-c m D` - Disable logging
 
+### Using the Diff Tools
+
+When Claude proposes code changes, Monet displays them in a diff view:
+
+- **Simple Diff Tool** (default): A read-only diff view showing the proposed changes
+  - Press `y` to accept Claude's changes exactly as shown
+  - Press `q` to reject the changes
+  
+- **Ediff Tool**: An interactive diff view that allows you to edit the changes before accepting
+  - Navigate between differences using `n` (next) and `p` (previous)
+  - Edit the proposed changes directly in the buffer
+  - Press `C-c C-c` to accept your edited version (your changes will be sent to Claude)
+  - Press `q` to reject all changes
+
+**Important**: With the ediff tool, any manual edits you make to the proposed changes are captured and sent to Claude when you accept. This allows you to refine Claude's suggestions before applying them.
+
 ### Session Management
 
 Monet automatically creates session keys based on your context:
@@ -110,18 +126,25 @@ With a prefix argument (`C-u C-c m s`), you can manually select a directory.
 
 #### Custom Diff Tool
 
-You can customize how Monet displays diffs by providing your own pair diff tool functions. Set
-`monet-diff-tool` to a function of that takes the following arguments: `old-file-path new-file-path new-file-contents on-accept on-quit`, and set `monet-cleanup-diff-tool` to a function that 
+You can customize how Monet displays diffs by providing your own diff tool functions. Set
+`monet-diff-tool` to a function that takes the following arguments: `old-file-path new-file-path new-file-contents on-accept on-quit`, and set `monet-diff-cleanup-tool` to a function that 
 takes a single context object.
 
 Your diff tool function should display the diff to the user and return a context object that will be
-passed to the diff cleanup tool later. Your diff tool should call `on-accept` with no arguments when
-the user accept the changes, and `on-quit` when the user rejects the changes. Do not close your diff
-tool buffers on accept or reject; the diff close tool will do that.
+passed to the diff cleanup tool later. The `on-accept` callback now takes a single argument - the
+final content to be sent to Claude. For read-only diff tools (like the simple diff tool), pass the
+original `new-file-contents`. For editable diff tools (like the ediff tool), pass the user's edited
+content. Your diff tool should call `on-quit` when the user rejects the changes. Do not close your diff
+tool buffers on accept or reject; the diff cleanup tool will do that.
 
-After calling your diff in response to a Claude request to display the diff tool, Monet monet will
+The ediff tool demonstrates this pattern - it allows users to manually edit the proposed changes before
+accepting them. When the user accepts the diff, the ediff tool extracts the edited content from the
+buffer using `buffer-substring-no-properties` and passes it to Claude, allowing for manual refinements
+to Claude's suggestions.
+
+After calling your diff in response to a Claude request to display the diff tool, Monet will
 store the context object returned from your diff tool function in the Monet session. When the user
-accepts or reject and your tool calls the `on-accept` or `on-reject` callbacks, Monet send the
+accepts or rejects and your tool calls the `on-accept` or `on-quit` callbacks, Monet sends the
 appropriate message to Claude. Claude will start accepting or rejecting the changes, and then send a
 message to Monet to close the diff tabs. Monet will then call your diff cleanup tool with the
 context object that was returned from your diff tool. Your diff cleanup tool should then kill diff
