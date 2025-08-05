@@ -74,6 +74,30 @@ When set to 'vertical, windows are split top-and-bottom."
                  (const :tag "Split vertically (top-and-bottom)" vertical))
   :group 'monet-ediff)
 
+(defcustom monet-ediff-accept-key "C-c C-c"
+  "Key binding for accepting changes in ediff.
+This key will be bound in the ediff control buffer to accept the changes."
+  :type 'string
+  :group 'monet-ediff)
+
+(defcustom monet-ediff-quit-key "q"
+  "Key binding for quitting ediff without saving.
+This key will be bound in the ediff control buffer to quit without saving changes."
+  :type 'string
+  :group 'monet-ediff)
+
+(defcustom monet-simple-diff-accept-key "y"
+  "Key binding for accepting changes in simple diff mode.
+This key will be bound in the diff buffer to accept the changes."
+  :type 'string
+  :group 'monet-tool)
+
+(defcustom monet-simple-diff-quit-key "q"
+  "Key binding for quitting simple diff mode without saving.
+This key will be bound in the diff buffer to quit without saving changes."
+  :type 'string
+  :group 'monet-tool)
+
 ;;; Constants
 (defconst monet-version "0.0.1")
 (defconst monet--port-min 10000 "Minimum port number for WebSocket server.")
@@ -1034,13 +1058,13 @@ Returns the diff context object for later used by the cleanup tool."
         (let ((map (make-sparse-keymap)))
           ;; Copy all bindings from diff-mode-map
           (set-keymap-parent map diff-mode-map)
-          ;; Override the specific keys we need - use string format for q to ensure it works
-          (define-key map "y" (lambda ()
-                                (interactive)
-                                (funcall on-accept)))
-          (define-key map (kbd "C-c C-k") (lambda ()
-                                            (interactive)
-                                            (funcall on-quit)))
+          ;; Override the specific keys we need with customizable bindings
+          (define-key map (kbd monet-simple-diff-accept-key) (lambda ()
+                                                               (interactive)
+                                                               (funcall on-accept)))
+          (define-key map (kbd monet-simple-diff-quit-key) (lambda ()
+                                                             (interactive)
+                                                             (funcall on-quit)))
           (use-local-map map))
 
         ;; Call on-quit on quit window
@@ -1051,7 +1075,11 @@ Returns the diff context object for later used by the cleanup tool."
                                          '((display-buffer-pop-up-window)))))
         (when diff-window
           (select-window diff-window)))
-      (message "Type \"y\" in the diff buffer to accept changes, or \"q\" to reject")
+
+      ;; Help message
+      (message "Type %s in the diff buffer to accept changes, or %s to reject"
+               monet-simple-diff-accept-key
+               monet-simple-diff-quit-key)
 
       ;; Return a context object for consistency with new interface
       `((diff-buffer . ,diff-buffer)
@@ -1129,8 +1157,10 @@ Returns the diff context object."
                                           #'split-window-vertically
                                         #'split-window-horizontally))
 
-         ;; Set ediff message
-         (ediff-brief-message-string " Type C-c C-c to accept changes, q to quit, ? for help"))
+         ;; Set ediff message with configured keys
+         (ediff-brief-message-string (format " Type %s to accept changes, %s to quit, ? for help"
+                                             monet-ediff-accept-key
+                                             monet-ediff-quit-key)))
 
     ;; Put the new contexts into the new bufer
     (with-current-buffer new-buffer
@@ -1152,13 +1182,13 @@ Returns the diff context object."
              (setq-local on-quit-callback on-quit)
 
              ;; Add custom key binding for accepting changes
-             (local-set-key (kbd "C-c C-c")
+             (local-set-key (kbd monet-ediff-accept-key)
                             (lambda ()
                               (interactive)
                               (funcall on-accept-callback)))
 
-             ;; Override q to quit without confirmation
-             (local-set-key (kbd "q")
+             ;; Override quit key to quit without confirmation
+             (local-set-key (kbd monet-ediff-quit-key)
                             (lambda ()
                               (interactive)
                               (funcall on-quit-callback)))
@@ -1738,5 +1768,8 @@ When enabled, provides key bindings for managing Monet sessions.
 
 ;;; Provide monet
 (provide 'monet)
+
+(defun hello ()
+  (message "HELLO"))
 
 ;;; monet.el ends here

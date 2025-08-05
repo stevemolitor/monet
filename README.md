@@ -97,6 +97,15 @@ With a prefix argument (`C-u C-c m s`), you can manually select a directory.
 
 ;; Change log buffer name
 (setq monet-log-buffer-name "*My Monet Log*")
+
+;; Customize diff keybindings
+(setq monet-ediff-accept-key "C-c C-a")      ; Default: "C-c C-c"
+(setq monet-ediff-quit-key "C-g")            ; Default: "q"
+(setq monet-simple-diff-accept-key "C-c C-c")      ; Default: "y"
+(setq monet-simple-diff-quit-key "C-g")      ; Default: "q"
+
+;; Change ediff window split direction
+(setq monet-ediff-split-window-direction 'vertical)  ; Default: 'horizontal
 ```
 
 #### Custom Diff Tool
