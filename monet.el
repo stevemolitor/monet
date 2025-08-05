@@ -53,13 +53,26 @@ It should return the created diff buffer."
   :type 'function
   :group 'monet-tool)
 
-(defcustom monet-cleanup-diff-tool 'monet-simple-diff-cleanup-tool
+(defcustom monet-diff-cleanup-tool 'monet-simple-diff-cleanup-tool
   "Function to use for cleaning up diff displays.
 The function should have the signature:
   (diff-buffer)
 where DIFF-BUFFER is the buffer created by `monet-diff-tool'."
   :type 'function
   :group 'monet-tool)
+
+(defgroup monet-ediff nil
+  "Customization options for the Monet ediff tool."
+  :group 'monet
+  :prefix "monet-")
+
+(defcustom monet-ediff-split-window-direction 'horizontal
+  "Direction for splitting ediff windows in Monet.
+When set to 'horizontal, windows are split side-by-side.
+When set to 'vertical, windows are split top-and-bottom."
+  :type '(choice (const :tag "Split horizontally (side-by-side)" horizontal)
+                 (const :tag "Split vertically (top-and-bottom)" vertical))
+  :group 'monet-ediff)
 
 ;;; Constants
 (defconst monet-version "0.0.1")
@@ -294,7 +307,7 @@ Searches all sessions for the deferred response."
   (let ((opened-diffs (monet--session-opened-diffs session)))
     (when-let ((diff-context (gethash tab-name opened-diffs)))
       ;; Pass the whole context to the cleanup function
-      (funcall monet-cleanup-diff-tool diff-context)
+      (funcall monet-diff-cleanup-tool diff-context)
       ;; Remove from opened diffs
       (remhash tab-name opened-diffs))))
 
@@ -1110,6 +1123,11 @@ Returns the diff context object."
 
          ;; Single frame ediff display
          (ediff-window-setup-function #'ediff-setup-windows-plain)
+
+         ;; Horizontal or vertical ediff windows
+         (ediff-split-window-function (if (eq monet-ediff-split-window-direction 'vertical)
+                                          #'split-window-vertically
+                                        #'split-window-horizontally))
 
          ;; Set ediff message
          (ediff-brief-message-string " Type C-c C-c to accept changes, q to quit, ? for help"))
