@@ -14,6 +14,7 @@
 ;;; Dependencies
 (require 'cl-lib)
 (require 'diff)
+(require 'ediff)
 (require 'json)
 (require 'project)
 (require 'subr-x) ; For when-let*
@@ -1079,6 +1080,118 @@ DIFF-CONTEXT is a context object containing diff-buffer and temp buffers."
         (with-current-buffer old-temp-buffer
           (set-buffer-modified-p nil))
         (kill-buffer old-temp-buffer)))))
+
+(defun monet-ediff-tool (old-file-path new-file-path new-file-contents on-accept on-quit)
+  "Show a diff using ediff.
+
+OLD-FILE-PATH is the path to the original file.
+NEW-FILE-PATH is the path where changes will be saved (often same as old).
+NEW-FILE-CONTENTS is the proposed new content.
+ON-ACCEPT is a function called when user accepts (no arguments).
+ON-QUIT is a function called when user quits (no arguments).
+
+Returns the diff context object."
+  (let* (;; Get the old and new buffers
+         (old-buffer (find-file-noselect old-file-path))
+         (new-buffer (generate-new-buffer "*monet-ediff-new*"))
+
+         ;; Create the context alist that will hold our state
+         (window-config (current-window-configuration))
+         (original-buffer (current-buffer))
+         (original-point (point))
+         (context (list (cons 'control-buffer nil) ; Will be set in startup hook
+                        (cons 'new-buffer new-buffer)
+                        (cons 'old-buffer old-buffer)
+                        (cons 'window-config window-config)
+                        (cons 'original-buffer original-buffer)
+                        (cons 'original-point original-point)
+                        (cons 'new-contents new-file-contents)
+                        (cons 'old-file-path old-file-path)))
+
+         ;; Single frame ediff display
+         (ediff-window-setup-function #'ediff-setup-windows-plain)
+
+         ;; Set ediff message
+         (ediff-brief-message-string " Type C-c C-c to accept changes, q to quit, ? for help"))
+
+    ;; Put the new contexts into the new bufer
+    (with-current-buffer new-buffer
+      (insert new-file-contents)
+      ;; Set the major mode based on the file extension for syntax highlighting
+      (let ((buffer-file-name new-file-path))
+        (set-auto-mode)))
+
+    ;; Start ediff session with a setup hook that captures the control buffer
+    (ediff-buffers
+     old-buffer
+     new-buffer
+     (list (lambda ()
+             ;; Put the control buffer in the context
+             (setf (alist-get 'control-buffer context) (current-buffer))
+
+             ;; Store the on-accept and on-quit callbacks in local buffer variables
+             (setq-local on-accept-callback on-accept)
+             (setq-local on-quit-callback on-quit)
+
+             ;; Add custom key binding for accepting changes
+             (local-set-key (kbd "C-c C-c")
+                            (lambda ()
+                              (interactive)
+                              (funcall on-accept-callback)))
+
+             ;; Override q to quit without confirmation
+             (local-set-key (kbd "q")
+                            (lambda ()
+                              (interactive)
+                              (funcall on-quit-callback)))
+
+             ;; Jump to the first difference
+             (ignore-errors (ediff-next-difference)))))
+
+    ;; We'll cleanup the mess
+    (remove-hook 'ediff-quit-hook #'ediff-cleanup-mess t)
+
+    ;; Return the context object
+    context))
+
+(defun monet-ediff-cleanup-tool (context)
+  "Clean up ediff session using CONTEXT object."
+  (let ((control-buffer (alist-get 'control-buffer context))
+        (window-config (alist-get 'window-config context))
+        (original-buffer (alist-get 'original-buffer context)))
+    ;; Store values we'll need after ediff quits
+    (let ((saved-window-config window-config)
+          (saved-original-buffer original-buffer))
+
+      ;; Quit ediff if control buffer exists
+      (when (and control-buffer (buffer-live-p control-buffer))
+        (with-current-buffer control-buffer
+          ;; bypass ediff confirmation
+          (let ((ctl-buf (current-buffer))
+                (ctl-frm (selected-frame))
+                (minibuffer-auto-raise t))
+            (setq this-command 'ediff-quit) ; bug#38219
+            (set-buffer ctl-buf)
+            (let ((ediff-keep-variants t))
+              (ediff-really-quit nil)
+              (ediff-cleanup-mess)))))
+
+      ;; Restore window configuration immediately after ediff quits
+      ;; Don't try to kill any buffers - let ediff handle that
+      (when saved-window-config
+        (set-window-configuration saved-window-config))
+
+      ;; Switch back to original buffer and restore position
+      (let ((saved-original-point (alist-get 'original-point context))
+            (saved-original-mark (alist-get 'original-mark context))
+            (saved-new-buffer (alist-get 'new-buffer context)))
+        (when (and saved-original-buffer (buffer-live-p saved-original-buffer))
+          (switch-to-buffer saved-original-buffer)
+          (when saved-original-point
+            (goto-char saved-original-point)))
+        ;; Kill the temporary buffer after ediff cleanup
+        (when (and saved-new-buffer (buffer-live-p saved-new-buffer))
+          (kill-buffer saved-new-buffer))))))
 
 (defun monet--close-all-diff-tabs (session)
   "Close all diff tabs created by Claude.
