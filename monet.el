@@ -98,6 +98,80 @@ This key will be bound in the diff buffer to quit without saving changes."
   :type 'string
   :group 'monet-tool)
 
+(defcustom monet-get-current-selection-tool 'monet-default-get-current-selection-tool
+  "Function to use for getting the current text selection.
+The function should have the signature:
+  () -> MCP response
+Returns the current selection or cursor position in the active editor.
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-get-latest-selection-tool 'monet-default-get-latest-selection-tool
+  "Function to use for getting the latest text selection.
+The function should have the signature:
+  () -> MCP response
+Returns the latest text selection from any file.
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-open-file-tool 'monet-default-open-file-tool
+  "Function to use for opening files.
+The function should have the signature:
+  (uri) -> MCP response
+where URI is a file path or file:// URI.
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-save-document-tool 'monet-default-save-document-tool
+  "Function to use for saving documents.
+The function should have the signature:
+  (uri) -> MCP response
+where URI is the file URI or path to save.
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-check-document-dirty-tool 'monet-default-check-document-dirty-tool
+  "Function to use for checking if a document has unsaved changes.
+The function should have the signature:
+  (uri) -> MCP response
+where URI is the file URI or path to check.
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-get-open-editors-tool 'monet-default-get-open-editors-tool
+  "Function to use for getting the list of open editors.
+The function should have the signature:
+  () -> MCP response
+Returns the list of currently open files in the editor.
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-get-workspace-folders-tool 'monet-default-get-workspace-folders-tool
+  "Function to use for getting workspace folders.
+The function should have the signature:
+  () -> MCP response
+Returns the list of workspace folders (project directories).
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
+(defcustom monet-diagnostics-tool 'monet-flymake-flycheck-diagnostics-tool
+  "Function to use for getting diagnostics.
+The function should have the signature:
+  (&optional uri) -> MCP response
+where URI is an optional file URI or path to get diagnostics for.
+If URI is nil, gets diagnostics for all open files.
+The default implementation collects from Flymake and Flycheck.
+The MCP response should be a list of content objects."
+  :type 'function
+  :group 'monet-tool)
+
 ;;; Constants
 (defconst monet-version "0.0.1")
 (defconst monet--port-min 10000 "Minimum port number for WebSocket server.")
@@ -617,7 +691,7 @@ This is sent when Claude Code has successfully connected to the IDE."
 (defun monet--get-tool-handler (name)
   "Return the handler function for tool NAME."
   (pcase name
-    ("getCurrentSelection" #'monet--tool-get-current-selection)
+    ("getCurrentSelection" #'monet--tool-get-current-selection-handler)
     ("openDiff" #'monet--tool-open-diff-handler)
     ("closeAllDiffTabs" #'monet--tool-close-all-diff-tabs-handler)
     ("close_tab" #'monet--tool-close-tab-handler)
@@ -627,10 +701,19 @@ This is sent when Claude Code has successfully connected to the IDE."
     ("getOpenEditors" #'monet--tool-get-open-editors-handler)
     ("getWorkspaceFolders" #'monet--tool-get-workspace-folders-handler)
     ("getDiagnostics" #'monet--tool-get-diagnostics-handler)
-    ("getLatestSelection" #'monet--tool-get-latest-selection)
+    ("getLatestSelection" #'monet--tool-get-latest-selection-handler)
     (_ nil)))
 
 ;; Tool handler adapters (convert MCP protocol to tool function calls)
+(defun monet--tool-get-current-selection-handler (_params _session)
+  "MCP handler for getCurrentSelection tool.
+_PARAMS and _SESSION are unused."
+  (funcall monet-get-current-selection-tool))
+
+(defun monet--tool-get-latest-selection-handler (_params _session)
+  "MCP handler for getLatestSelection tool.
+_PARAMS and _SESSION are unused."
+  (funcall monet-get-latest-selection-tool))
 (defun monet--tool-open-diff-handler (params session)
   "MCP handler for openDiff tool.
 
@@ -716,38 +799,38 @@ SESSION is the MCP session."
 PARAMS contains uri.
 _SESSION is unused."
   (let ((uri (alist-get 'uri params)))
-    (monet--open-file uri)))
+    (funcall monet-open-file-tool uri)))
 
 (defun monet--tool-save-document-handler (params _session)
   "MCP handler for saveDocument tool.
 PARAMS contains uri.
 _SESSION is unused."
   (let ((uri (alist-get 'uri params)))
-    (monet--save-document uri)))
+    (funcall monet-save-document-tool uri)))
 
 (defun monet--tool-check-document-dirty-handler (params _session)
   "MCP handler for checkDocumentDirty tool.
 PARAMS contains uri.
 _SESSION is unused."
   (let ((uri (alist-get 'uri params)))
-    (monet--check-document-dirty uri)))
+    (funcall monet-check-document-dirty-tool uri)))
 
 (defun monet--tool-get-open-editors-handler (_params _session)
   "MCP handler for getOpenEditors tool.
 _PARAMS and _SESSION are unused."
-  (monet--get-open-editors))
+  (funcall monet-get-open-editors-tool))
 
 (defun monet--tool-get-workspace-folders-handler (_params _session)
   "MCP handler for getWorkspaceFolders tool.
 _PARAMS and _SESSION are unused."
-  (monet--get-workspace-folders))
+  (funcall monet-get-workspace-folders-tool))
 
 (defun monet--tool-get-diagnostics-handler (params _session)
   "MCP handler for getDiagnostics tool.
 PARAMS may contain optional uri.
 _SESSION is unused."
   (let ((uri (alist-get 'uri params)))
-    (monet--get-diagnostics uri)))
+    (funcall monet-diagnostics-tool uri)))
 
 (defun monet--handle-tools-list (_session ws id _params)
   "Handle tools/list request with ID and PARAMS from WS for SESSION."
@@ -780,10 +863,8 @@ _SESSION is unused."
        ws id -32601
        (format "Tool not found: %s" tool-name)))))
 
-(defun monet--tool-get-current-selection (_params _session)
-  "Implementation of getCurrentSelection tool.
-_PARAMS is unused for this tool.
-_SESSION is the MCP session (unused for this tool)."
+(defun monet-default-get-current-selection-tool ()
+  "Default implementation of getCurrentSelection tool."
   (let ((selection-data (monet--get-selection)))
     (if selection-data
         (list `((type . "text")
@@ -795,10 +876,8 @@ _SESSION is the MCP session (unused for this tool)."
                                                     (end . ((line . 0) (character . 0)))
                                                     (isEmpty . t)))))))))))
 
-(defun monet--tool-get-latest-selection (_params _session)
-  "Get the latest text selection from any file.
-_PARAMS is unused for this tool.
-_SESSION is the MCP session (unused for this tool)."
+(defun monet-default-get-latest-selection-tool ()
+  "Default implementation to get the latest text selection from any file."
   ;; Find the most recently selected buffer with a selection
   (let ((selection-data nil)
         (latest-time 0))
@@ -1314,8 +1393,8 @@ SESSION is the monet session for tracking opened diffs."
    (list `((type . "text")
            (text . "NO_TAB_SPECIFIED"))))))
 
-(defun monet--open-file (uri)
-  "Open a file specified by URI.
+(defun monet-default-open-file-tool (uri)
+  "Default implementation to open a file specified by URI.
 URI can be a file path or file:// URI.
 Returns success or error response."
   (condition-case err
@@ -1339,8 +1418,8 @@ Returns success or error response."
      (list `((type . "text")
              (text . ,(format "Error opening file: %s" (error-message-string err))))))))
 
-(defun monet--save-document (uri)
-  "Save a document to disk.
+(defun monet-default-save-document-tool (uri)
+  "Default implementation to save a document to disk.
 URI is the file URI or path to save.
 Returns success or error response."
   (let* ((file-path (if (string-prefix-p "file://" uri)
@@ -1356,9 +1435,8 @@ Returns success or error response."
               (text . ,(json-encode `((saved . :json-false)
                                       (error . "File not open")))))))))
 
-(defun monet--check-document-dirty (uri)
-  "Check if a document has unsaved changes.
-
+(defun monet-default-check-document-dirty-tool (uri)
+  "Default implementation to check if a document has unsaved changes.
 URI is the file URI or path to check.
 Returns dirty status response."
   (let* ((file-path (if (string-prefix-p "file://" uri)
@@ -1371,8 +1449,8 @@ Returns dirty status response."
     (list `((type . "text")
             (text . ,(json-encode `((isDirty . ,is-dirty))))))))
 
-(defun monet--get-open-editors ()
-  "Get list of currently open file editors.
+(defun monet-default-get-open-editors-tool ()
+  "Default implementation to get list of currently open file editors.
 Returns MCP-formatted response with editors list."
   (let ((editors '()))
     ;; Iterate through all buffers
@@ -1389,8 +1467,8 @@ Returns MCP-formatted response with editors list."
     (list `((type . "text")
             (text . ,(json-encode `((editors . ,(nreverse editors)))))))))
 
-(defun monet--get-workspace-folders ()
-  "Get list of workspace folders/project roots.
+(defun monet-default-get-workspace-folders-tool ()
+  "Default implementation to get list of workspace folders/project roots.
 Returns MCP-formatted response with folders list."
   (let ((folders '())
         (seen-dirs (make-hash-table :test 'equal)))
@@ -1427,8 +1505,8 @@ Returns MCP-formatted response with folders list."
     (list `((type . "text")
             (text . ,(json-encode `((folders . ,(nreverse folders)))))))))
 
-(defun monet--get-diagnostics (&optional uri)
-  "Get diagnostics for a file or all open files.
+(defun monet-flymake-flycheck-diagnostics-tool (&optional uri)
+  "Default implementation to get diagnostics for a file or all open files.
 URI is optional file URI or path to get diagnostics for.
 If URI is nil, gets diagnostics for all open files.
 Returns diagnostics in claude-code-ide format."
