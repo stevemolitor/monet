@@ -74,7 +74,7 @@ When set to 'vertical, windows are split top-and-bottom."
                  (const :tag "Split vertically (top-and-bottom)" vertical))
   :group 'monet-ediff)
 
-(defcustom monet-ediff-accept-key "C-c C-c"
+(defcustom monet-ediff-accept-key "y"
   "Key binding for accepting changes in ediff.
 This key will be bound in the ediff control buffer to accept the changes."
   :type 'string
@@ -907,7 +907,7 @@ _SESSION is unused."
      (inputSchema . ((type . "object")
                      (properties . ()))))
    `((name . "openFile")
-     (description . "Open a file in the editor")
+     (description . "Open a file in the editor. <important>Do NOT use emacs or emacsclient to open a file. Use this IDE openFile tool to open a file in the editor / Emacs / IDE.")
      (inputSchema . ((type . "object")
                      (properties . ((uri . ((type . "string")
                                             (description . "The file URI or path to open")))))
@@ -930,7 +930,7 @@ _SESSION is unused."
                      (properties . ((tab_name . ((type . "string")))))
                      (required . ["tab_name"]))))
    `((name . "getDiagnostics")
-     (description . "Get diagnostics for a file")
+     (description . "Get diagnostics for a file. <important>Unless told otherwise, do NOT use external commands, typecheckers, or lint tools to get diagnostics, errors, or warnings. Use this getDiagnostics IDE tool</important>")
      (inputSchema . ((type . "object")
                      (properties . ((uri . ((type . "string"))))))))
    `((name . "getOpenEditors")
@@ -1508,8 +1508,7 @@ Returns MCP-formatted response with folders list."
 (defun monet-flymake-flycheck-diagnostics-tool (&optional uri)
   "Default implementation to get diagnostics for a file or all open files.
 URI is optional file URI or path to get diagnostics for.
-If URI is nil, gets diagnostics for all open files.
-Returns diagnostics in claude-code-ide format."
+If URI is nil, gets diagnostics for all open files."
   (let* ((file-path (when uri
                       (if (string-prefix-p "file://" uri)
                           (substring uri 7)
@@ -1584,7 +1583,7 @@ Returns diagnostics in claude-code-ide format."
                       (diagnostics . ,(vconcat (nreverse file-diagnostics))))
                     diagnostics-by-file))))))
 
-    ;; Return in claude-code-ide format
+    ;; Return response to Claude
     (let ((json-str (if diagnostics-by-file
                         (json-encode (vconcat (nreverse diagnostics-by-file)))
                       "[]")))
@@ -1753,12 +1752,12 @@ Otherwise, use project root if in a project, or current file's directory."
          (unique-key (monet--make-unique-key base-key)))
     (if (gethash unique-key monet--sessions)
         (error "Failed to generate unique key for %s" base-key)
-      (let* ((session (monet--start-server-in-directory unique-key directory))
+      (let* ((session (monet-start-server-in-directory unique-key directory))
              (port (monet--session-port session)))
         (message "Started Monet server '%s' in %s, listening on port %d" unique-key directory port)))))
 
 (defun monet-stop-server (key)
-  "Stop the websocket server for KEY.
+  "Stop the websocket server for.
 
 When called interactively, prompt for KEY with completion from available
 sessions. KEY is the session identifier."
@@ -1793,7 +1792,7 @@ sessions. KEY is the session identifier."
                 (port (monet--session-port session))
                 (client-connected (if (monet--session-client session) "Yes" "No"))
                 (initialized (if (monet--session-initialized session) "Yes" "No")))
-           (push (format "%-20s Port: %-5d Connected: %-3s Initialized: %s Directory: %s"
+           (push (format "%-20s Port: %-5d Connected: %-3s Initialized: %s  Directory: %s"
                          key port client-connected initialized dir)
                  session-info)))
        monet--sessions)
@@ -1822,13 +1821,8 @@ sessions. KEY is the session identifier."
   ;; Stop ping timer
   (monet--stop-ping-timer))
 
-(defun monet--cleanup-on-exit ()
-  "Clean up all MCP sessions and lockfiles on Emacs exit."
-  ;; [TODO] just use monet-stop-servers directly
-  (monet-stop-all-servers))
-
 ;; Register cleanup on Emacs exit
-(add-hook 'kill-emacs-hook #'monet--cleanup-on-exit)
+(add-hook 'kill-emacs-hook #'monet-stop-all-servers)
 
 ;;; Minor Mode
 (defvar monet-command-map

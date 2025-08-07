@@ -1,13 +1,12 @@
 # Monet
 
-![Water Lilies by Claude Monet](https://cdn.zappy.app/669c203862db189e5bfd2055f3a99bc4.png)
-<sub>Water Lilies (1840–1926). Original from the Art Institute of Chicago.</sub>
+![Claude Monet Self Portrait](https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Autoportret_Claude_Monet.jpg/512px-Autoportret_Claude_Monet.jpg)
+
+<sub>Self Portrait with a Beret, 1886 by Claude Monet. Source: Wikimedia Commons</sub>
 
 Monet is an Emacs package that implements the (undocumented) [Claude Code](https://docs.anthropic.com/en/docs/claude-code) IDE protocol, enabling Claude to interact with your Emacs environment through a WebSocket connection.
 
 You can use Monet with Claude Code running in your favorite terminal emulator (Ghostty, Kitty, iTerm2, WezTerm), or with packages like [claude-code.el](https://github.com/stevemolitor/claude-code.el) that run Claude Code directly inside Emacs.
-
-_Warning:_ Monet is a work in progress. Expect bugs. 
 
 ## Features
 
@@ -23,6 +22,13 @@ _Warning:_ Monet is a work in progress. Expect bugs.
 - [websocket](https://github.com/ahyatt/emacs-websocket) package
 
 ## Installation
+
+### Using use-package with :vc (Emacs 30+)
+
+```elisp
+(use-package monet
+  :vc (:fetcher github :repo "stevemolitor/monet"))
+```
 
 ### Using straight.el
 
@@ -58,7 +64,32 @@ _Warning:_ Monet is a work in progress. Expect bugs.
    C-c m s    ; Start server in current project/directory
    ```
 
-3. In Claude Code, start a new chat and Claude will automatically connect to your Emacs session.
+3. In Claude Code, start a new chat and use the /ide slash command to connect to your Emacs session.
+
+To have Claude automatically connect to your Monet session set `ENABLE_IDE_IDE=t` before starting Claude.
+
+If you have multiple Monet sessions for the same project you can do this to have Claude automatically connect to the desired instance:
+
+```sh
+ENABLE_IDE_INTEGRATION=t && CLAUDE_CODE_SSE_PORT=123456 && claude
+```
+
+Monet prints a message with the port number when you call `monet-start-server` (`C-c s`). You can see the list of all running servers with their ports and directories via `monet-list-sessions` (`C-c l`). 
+
+### Using Monet with [claude-code.el](https://github.com/stevemolitor/claude-code.el)
+
+You can use Monet with [claude-code.el](https://github.com/stevemolitor/claude-code.el) by adding this hook:
+
+
+```elisp
+(add-hook 'claude-code-process-environment-functions #'monet-start-server-function)
+```
+
+When claude-code.el starts a new session it will start and associate a Monet session with the current claude-code.el instance. 
+
+### Session Management
+
+Sessions are automatically cleaned up (killed) when you exit the associated Claude session. When you exit Emacs all sessions are cleaned up. You can stop a session manually via `monet-stop-server` (`C-c q`).
 
 ### Example
 
@@ -101,6 +132,8 @@ Monet automatically creates session keys based on your context:
 - Automatically generates unique keys for multiple sessions (e.g., `project<2>`)
 
 With a prefix argument (`C-u C-c m s`), you can manually select a directory.
+
+You can start multiple sessions per project, or have multiple 
 
 ### Customization
 
@@ -164,6 +197,7 @@ You can customize how Monet displays diffs by providing your own diff tool funct
 ```
 
 The diff tool function should take: `(old-file-path new-file-path new-file-contents on-accept on-quit)` and return a context object. The cleanup function takes that context object for cleanup.
+
 ## How It Works
 
 Monet creates a WebSocket server that Claude Code connects to via MCP. This allows Claude to:
@@ -177,6 +211,16 @@ Each session is isolated to a specific directory/project, ensuring Claude only a
 
 ## Troubleshooting
 
-- **Enable logging**: `C-c m L` to see all MCP communication
 - **Check active sessions**: `C-c m l` to list all running servers
-- **Connection issues**: Ensure no firewall is blocking local WebSocket connections
+- **Enable logging**: `C-c m L` to see all MCP communication
+
+## Images
+
+### Simple Monet Diff Tool with Ghostty
+
+![Monet and Ghostty Diff](https://cdn.zappy.app/99797ecef1d5a12fc36bb72b39aa8464.png)
+
+### Monet Ediff Tool inside claude-code.el
+
+[Monet Ediff in claude-code.el](https://cdn.zappy.app/a14edc8ebcec81cf447107f49b8712cb.gif)
+
