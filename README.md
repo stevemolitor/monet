@@ -74,7 +74,7 @@ If you have multiple Monet sessions for the same project you can do this to have
 ENABLE_IDE_INTEGRATION=t && CLAUDE_CODE_SSE_PORT=123456 && claude
 ```
 
-Monet prints a message with the port number when you call `monet-start-server` (`C-c s`). You can see the list of all running servers with their ports and directories via `monet-list-sessions` (`C-c l`). 
+Monet prints a message with the port number when you call `monet-start-server` (`C-c m s`). You can see the list of all running servers with their ports and directories via `monet-list-sessions` (`C-c m l`). 
 
 ### Using Monet with [claude-code.el](https://github.com/stevemolitor/claude-code.el)
 
