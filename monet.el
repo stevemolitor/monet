@@ -2,7 +2,7 @@
 
 ;; Author: Stephen Molitor <stevemolitor@gmail.com>
 ;; Version: 0.0.1
-;; Package-Requires: ((emacs "30.0") (websocket "1.15")
+;; Package-Requires: ((emacs "30.0") (websocket "1.15"))
 ;; Keywords: tools, ai
 ;; URL: https://github.com/stevemolitor/monet
 
