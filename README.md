@@ -27,7 +27,7 @@ You can use Monet with Claude Code running in your favorite terminal emulator (G
 
 ```elisp
 (use-package monet
-  :vc (:fetcher github :repo "stevemolitor/monet"))
+  :vc (:url "https://github.com/stevemolitor/monet" :rev :newest))
 ```
 
 ### Using straight.el
