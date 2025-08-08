@@ -222,5 +222,6 @@ Each session is isolated to a specific directory/project, ensuring Claude only a
 
 ### Monet Ediff Tool inside claude-code.el
 
-[Monet Ediff in claude-code.el](https://cdn.zappy.app/a14edc8ebcec81cf447107f49b8712cb.gif)
+![Monet Ediff in claude-code.el](https://cdn.zappy.app/9198756659a0fcfedda2a14bc6b5fdb0.png)
+
 
