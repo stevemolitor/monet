@@ -1083,6 +1083,48 @@ Returns a list of resource objects."
                monet--sessions))))
 
 ;;; Tools
+
+;; Minor mode for diff tool keybindings to ensure compatibility with evil-mode
+(defvar monet-diff-mode-map (make-sparse-keymap)
+  "Keymap for monet-diff-mode.")
+
+(define-minor-mode monet-diff-mode
+  "Minor mode for monet diff tool keybindings.
+This mode ensures keybindings work correctly even when evil-mode is active."
+  :init-value nil
+  :lighter " MonetDiff"
+  :keymap monet-diff-mode-map
+  :group 'monet)
+
+(defun monet--setup-diff-keybindings (accept-key quit-key on-accept on-quit)
+  "Set up diff keybindings ensuring evil-mode compatibility.
+ACCEPT-KEY and QUIT-KEY are the keys to bind.
+ON-ACCEPT and ON-QUIT are the callbacks to execute."
+  ;; Clear any existing bindings in our mode map
+  (setcdr monet-diff-mode-map nil)
+  
+  ;; Define our keybindings in the minor mode map
+  (define-key monet-diff-mode-map (kbd accept-key) on-accept)
+  (define-key monet-diff-mode-map (kbd quit-key) on-quit)
+  
+  ;; Enable our minor mode with high precedence
+  (monet-diff-mode 1)
+  
+  ;; If evil-mode is active, also define the keys for the appropriate states
+  (when (and (boundp 'evil-mode) evil-mode)
+    ;; Define for normal state (most common in diff buffers)
+    (when (fboundp 'evil-local-set-key)
+      (evil-local-set-key 'normal (kbd accept-key) on-accept)
+      (evil-local-set-key 'normal (kbd quit-key) on-quit)
+      ;; Also define for motion state (sometimes used in special buffers)
+      (evil-local-set-key 'motion (kbd accept-key) on-accept)
+      (evil-local-set-key 'motion (kbd quit-key) on-quit))
+    
+    ;; For ediff control buffer, ensure we're in emacs state
+    (when (string-match-p "\\*Ediff Control Panel\\*" (buffer-name))
+      (when (fboundp 'evil-emacs-state)
+        (evil-emacs-state)))))
+
 (defun monet-simple-diff-tool (old-file-path new-file-path new-file-contents on-accept on-quit)
   "Create a simple, read- diff display using diff-mode.
 
@@ -1132,19 +1174,16 @@ Returns the diff context object for later used by the cleanup tool."
         ;; Re-initialize diff-mode with our settings
         (diff-mode)
 
-        ;; Override the default quit-window binding from special-mode/diff-mode
-        ;; We need to completely override the keymap to prevent other modes from interfering
-        (let ((map (make-sparse-keymap)))
-          ;; Copy all bindings from diff-mode-map
-          (set-keymap-parent map diff-mode-map)
-          ;; Override the specific keys we need with customizable bindings
-          (define-key map (kbd monet-simple-diff-accept-key) (lambda ()
-                                                               (interactive)
-                                                               (funcall on-accept new-file-contents)))
-          (define-key map (kbd monet-simple-diff-quit-key) (lambda ()
-                                                             (interactive)
-                                                             (funcall on-quit)))
-          (use-local-map map))
+        ;; Set up keybindings using our minor mode for evil-mode compatibility
+        (monet--setup-diff-keybindings 
+         monet-simple-diff-accept-key 
+         monet-simple-diff-quit-key
+         (lambda ()
+           (interactive)
+           (funcall on-accept new-file-contents))
+         (lambda ()
+           (interactive)
+           (funcall on-quit)))
 
         ;; Call on-quit on quit window
         (add-hook 'quit-window-hook (lambda () (funcall on-quit)) nil t))
@@ -1281,21 +1320,20 @@ Returns the diff context object."
              (setq-local on-accept-callback on-accept)
              (setq-local on-quit-callback on-quit)
 
-             ;; Add custom key binding for accepting changes
-             (local-set-key (kbd monet-ediff-accept-key)
-                            (lambda ()
-                              (interactive)
-                              ;; Get the edited content from buffer B
-                              (let ((edited-content
-                                     (with-current-buffer ediff-buffer-B
-                                       (buffer-substring-no-properties (point-min) (point-max)))))
-                                (funcall on-accept-callback edited-content))))
-
-             ;; Override quit key to quit without confirmation
-             (local-set-key (kbd monet-ediff-quit-key)
-                            (lambda ()
-                              (interactive)
-                              (funcall on-quit-callback)))
+             ;; Set up keybindings using our minor mode for evil-mode compatibility
+             (monet--setup-diff-keybindings
+              monet-ediff-accept-key
+              monet-ediff-quit-key
+              (lambda ()
+                (interactive)
+                ;; Get the edited content from buffer B
+                (let ((edited-content
+                       (with-current-buffer ediff-buffer-B
+                         (buffer-substring-no-properties (point-min) (point-max)))))
+                  (funcall on-accept-callback edited-content)))
+              (lambda ()
+                (interactive)
+                (funcall on-quit-callback)))
 
              ;; Jump to the first difference
              (ignore-errors (ediff-next-difference)))))
@@ -1864,7 +1902,7 @@ When enabled, provides key bindings for managing Monet sessions.
                  (or monet-prefix-key "M-x monet-")))
     (message "Monet mode disabled.")))
 
-;;; Provide monet
+;;; provide monet
 (provide 'monet)
 
 ;;; monet.el ends here
