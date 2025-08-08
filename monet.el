@@ -98,6 +98,14 @@ This key will be bound in the diff buffer to quit without saving changes."
   :type 'string
   :group 'monet-tool)
 
+(defcustom monet-hide-diff-when-irrelevant nil
+  "When non-nil, hide diff buffers when editing unrelated files.
+Diff buffers will only be shown when editing files within the
+associated Claude session directory or the file that initiated
+the diff request."
+  :type 'boolean
+  :group 'monet-tool)
+
 (defcustom monet-get-current-selection-tool 'monet-default-get-current-selection-tool
   "Function to use for getting the current text selection.
 The function should have the signature:
@@ -548,7 +556,12 @@ Remove SESSION from `monet--sessions'."
     (remhash key monet--sessions)
     ;; Remove hooks if no more sessions
     (when (= 0 (hash-table-count monet--sessions))
-      (remove-hook 'post-command-hook #'monet--track-selection-change))))
+      (remove-hook 'post-command-hook #'monet--track-selection-change)
+      (remove-hook 'post-command-hook #'monet--track-diff-visibility)
+      ;; Cancel visibility timer if active
+      (when monet--diff-visibility-timer
+        (cancel-timer monet--diff-visibility-timer)
+        (setq monet--diff-visibility-timer nil)))))
 
 (defun monet--on-error-server (session _ws action error)
   "Handle WebSocket error for SESSION with WS during ACTION with ERROR."
@@ -724,6 +737,9 @@ Returns deferred response indicator."
          (new-file-path (alist-get 'new_file_path params))
          (new-file-contents (alist-get 'new_file_contents params))
          (tab-name (alist-get 'tab_name params))
+         ;; Capture the current buffer's file that initiated this diff
+         (initiating-file (when buffer-file-name
+                            (expand-file-name buffer-file-name)))
          ;; Define accept callback
          (on-accept
           (lambda (final-contents)
@@ -771,8 +787,18 @@ Returns deferred response indicator."
                                     new-file-contents on-accept on-quit)
                          (error "Diff tool failed: %s" (error-message-string err)))))
 
+    ;; Enhance the diff context with session information
+    (when diff-context
+      (setf (alist-get 'initiating-file diff-context) initiating-file)
+      (setf (alist-get 'session-directory diff-context) (monet--session-directory session))
+      (setf (alist-get 'tab-name diff-context) tab-name))
+
     ;; Store the full context in hash table
     (puthash tab-name diff-context opened-diffs)
+
+    ;; Update diff visibility if feature is enabled
+    (when monet-hide-diff-when-irrelevant
+      (run-with-idle-timer 0.01 nil #'monet--update-diff-visibility))
 
     ;; Return deferred response indicator
     `((deferred . t)
@@ -1006,7 +1032,99 @@ Returns a list of resource objects."
 ;; Hooks
 (defun monet-register-hooks ()
   "Register hooks for MCP functionality."
-  (add-hook 'post-command-hook #'monet--track-selection-change))
+  (add-hook 'post-command-hook #'monet--track-selection-change)
+  (add-hook 'post-command-hook #'monet--track-diff-visibility))
+
+;;; Diff Visibility Management
+(defun monet--is-buffer-relevant-to-session-p (buffer session-directory initiating-file)
+  "Check if BUFFER is relevant to a session.
+BUFFER is relevant if its file is under SESSION-DIRECTORY or matches INITIATING-FILE."
+  (when-let ((file-name (buffer-file-name buffer)))
+    (let ((expanded-file (expand-file-name file-name)))
+      (or
+       ;; File is under session directory
+       (and session-directory
+            (string-prefix-p (file-name-as-directory session-directory)
+                             expanded-file))
+       ;; File matches the initiating file
+       (and initiating-file
+            (string= expanded-file initiating-file))))))
+
+(defun monet--should-show-diff-p (diff-context current-buffer)
+  "Determine if diff should be visible based on CURRENT-BUFFER.
+DIFF-CONTEXT contains the diff information including session context."
+  (let ((diff-buffer (alist-get 'diff-buffer diff-context))
+        (session-directory (alist-get 'session-directory diff-context))
+        (initiating-file (alist-get 'initiating-file diff-context)))
+    (or
+     ;; Current buffer IS the diff buffer
+     (eq current-buffer diff-buffer)
+     ;; Current buffer is relevant to the session
+     (monet--is-buffer-relevant-to-session-p current-buffer 
+                                              session-directory 
+                                              initiating-file))))
+
+(defun monet--hide-diff-window (diff-buffer)
+  "Hide the window displaying DIFF-BUFFER if visible."
+  (when-let ((window (get-buffer-window diff-buffer)))
+    ;; Store the window's buffer in a property for later restoration
+    (with-current-buffer diff-buffer
+      (setq-local monet--hidden-window window))
+    ;; Switch the window to show scratch buffer or previous buffer
+    (with-selected-window window
+      (switch-to-prev-buffer))))
+
+(defun monet--show-diff-window (diff-buffer)
+  "Show DIFF-BUFFER in a window, restoring previous window if possible."
+  (if-let ((window (get-buffer-window diff-buffer)))
+      ;; Already visible, do nothing
+      nil
+    ;; Try to restore to previous window or create new one
+    (let ((prev-window (with-current-buffer diff-buffer
+                         (and (boundp 'monet--hidden-window)
+                              monet--hidden-window))))
+      (if (and prev-window (window-live-p prev-window))
+          ;; Restore to previous window
+          (set-window-buffer prev-window diff-buffer)
+        ;; Display in new window
+        (display-buffer diff-buffer)))))
+
+(defun monet--update-diff-visibility ()
+  "Update visibility of all diff buffers based on current buffer context.
+Only runs when `monet-hide-diff-when-irrelevant' is non-nil."
+  (when monet-hide-diff-when-irrelevant
+    (let ((current-buf (current-buffer)))
+      ;; Check all sessions for active diffs
+      (maphash
+       (lambda (_key session)
+         (let ((opened-diffs (monet--session-opened-diffs session)))
+           (maphash
+            (lambda (_tab-name diff-context)
+              (let ((diff-buffer (alist-get 'diff-buffer diff-context)))
+                (when (and diff-buffer (buffer-live-p diff-buffer))
+                  (if (monet--should-show-diff-p diff-context current-buf)
+                      (monet--show-diff-window diff-buffer)
+                    (monet--hide-diff-window diff-buffer)))))
+            opened-diffs)))
+       monet--sessions))))
+
+(defvar monet--diff-visibility-timer nil
+  "Timer for debouncing diff visibility updates.")
+
+(defun monet--track-diff-visibility ()
+  "Track buffer changes and update diff visibility with debouncing.
+This is called from post-command-hook."
+  (when (and monet-hide-diff-when-irrelevant
+             ;; Only run if there are active diffs
+             (cl-some (lambda (session)
+                        (> (hash-table-count (monet--session-opened-diffs session)) 0))
+                      (hash-table-values monet--sessions)))
+    ;; Cancel any existing timer
+    (when monet--diff-visibility-timer
+      (cancel-timer monet--diff-visibility-timer))
+    ;; Set new timer for debounced update
+    (setq monet--diff-visibility-timer
+          (run-with-idle-timer 0.1 nil #'monet--update-diff-visibility))))
 
 ;;; Selection Tracking
 (defun monet--get-selection ()
@@ -1150,6 +1268,8 @@ Returns the diff context object for later used by the cleanup tool."
         (add-hook 'quit-window-hook (lambda () (funcall on-quit)) nil t))
 
       ;; Display the diff buffer and switch to it
+      ;; Note: visibility management will be handled by the post-command-hook
+      ;; after the context is enhanced with session info in the handler
       (let ((diff-window (display-buffer diff-buffer
                                          '((display-buffer-pop-up-window)))))
         (when diff-window
@@ -1818,6 +1938,10 @@ sessions. KEY is the session identifier."
   (when monet--selection-timer
     (cancel-timer monet--selection-timer)
     (setq monet--selection-timer nil))
+  ;; Cancel visibility timer if active
+  (when monet--diff-visibility-timer
+    (cancel-timer monet--diff-visibility-timer)
+    (setq monet--diff-visibility-timer nil))
   ;; Stop ping timer
   (monet--stop-ping-timer))
 
