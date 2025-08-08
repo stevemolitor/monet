@@ -186,6 +186,13 @@ Available customizable tools:
 - `monet-get-workspace-folders-tool` - List project directories
 - `monet-diagnostics-tool` - Get diagnostics (defaults to Flymake/Flycheck)
 
+_Important:_ to customize the diff tool to use ediff, you must set both the diff tool and the diff cleanup tool:
+
+```elisp
+(setq monet-diff-tool #'monet-ediff-tool)
+(setq monet-diff-cleanup-tool #'monet-ediff-cleanup-tool)
+```
+
 #### Custom Diff Tool
 
 You can customize how Monet displays diffs by providing your own diff tool functions:
@@ -223,5 +230,3 @@ Each session is isolated to a specific directory/project, ensuring Claude only a
 ### Monet Ediff Tool inside claude-code.el
 
 ![Monet Ediff in claude-code.el](https://cdn.zappy.app/9198756659a0fcfedda2a14bc6b5fdb0.png)
-
-
