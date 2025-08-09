@@ -1235,7 +1235,9 @@ Returns the diff context object for later used by the cleanup tool."
            (switches `("-u" "--label" ,old-file-path "--label" ,(or new-file-path old-file-path)))
            ;; syntax highlighting
            (diff-font-lock-syntax 'hunk-also)
-           (diff-font-lock-prettify t))
+           (diff-font-lock-prettify t)
+           ;; diff-no-select will try to add extra labels if diff-use-labels is t or 'check; we're supplying or own labels
+           (diff-use-labels nil))
       ;; Create diff via diff-no-select
       (diff-no-select old-temp-buffer new-temp-buffer switches t diff-buffer)
       ;; Configure the diff buffer
