@@ -1137,13 +1137,28 @@ This is called from post-command-hook."
            (text (if (use-region-p)
                      (buffer-substring-no-properties start-pos end-pos)
                    ""))
+           ;; Check if we're in evil-mode visual line mode
+           (in-evil-visual-line (and (bound-and-true-p evil-mode)
+                                      (bound-and-true-p evil-visual-selection)
+                                      (eq evil-visual-selection 'line)))
+           ;; Adjust end position for evil visual line mode
+           (adjusted-end-pos (if in-evil-visual-line
+                                 ;; In visual line mode, end-pos is at the start of the last
+                                 ;; selected line. We need to move it to the END of that line
+                                 ;; for correct line counting.
+                                 (save-excursion
+                                   (goto-char end-pos)
+                                   ;; Always move to the end of the current line
+                                   (end-of-line)
+                                   (point))
+                               end-pos))
            (start-line (1- (line-number-at-pos start-pos)))
-           (end-line (1- (line-number-at-pos end-pos)))
+           (end-line (1- (line-number-at-pos adjusted-end-pos)))
            (start-col (save-excursion
                         (goto-char start-pos)
                         (current-column)))
            (end-col (save-excursion
-                      (goto-char end-pos)
+                      (goto-char adjusted-end-pos)
                       (current-column)))
            (selection `((start . ((line . ,start-line)
                                   (character . ,start-col)))
