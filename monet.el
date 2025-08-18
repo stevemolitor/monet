@@ -1134,22 +1134,48 @@ This is called from post-command-hook."
            (point-pos (point))
            (start-pos (if (use-region-p) (region-beginning) point-pos))
            (end-pos (if (use-region-p) (region-end) point-pos))
-           (text (if (use-region-p)
-                     (buffer-substring-no-properties start-pos end-pos)
+           ;; Check if we're in evil-mode visual line mode with active selection
+           (in-evil-visual-line (and (bound-and-true-p evil-mode)
+                                      (bound-and-true-p evil-visual-selection)
+                                      (eq evil-visual-selection 'line)
+                                      ;; Must also have an active region or be in visual state
+                                      (or (use-region-p)
+                                          (and (boundp 'evil-visual-state-minor-mode)
+                                               evil-visual-state-minor-mode))))
+           ;; Adjust positions for evil visual line mode
+           (adjusted-start-pos (if in-evil-visual-line
+                                   ;; In visual line mode, ensure start is at beginning of line
+                                   (save-excursion
+                                     (goto-char start-pos)
+                                     (beginning-of-line)
+                                     (point))
+                                 start-pos))
+           (adjusted-end-pos (if in-evil-visual-line
+                                 ;; In visual line mode, end-pos is at the start of the last
+                                 ;; selected line. We need to move it to the END of that line
+                                 ;; for correct line counting.
+                                 (save-excursion
+                                   (goto-char end-pos)
+                                   ;; Always move to the end of the current line
+                                   (end-of-line)
+                                   (point))
+                               end-pos))
+           (text (if (or (use-region-p) in-evil-visual-line)
+                     (buffer-substring-no-properties adjusted-start-pos adjusted-end-pos)
                    ""))
-           (start-line (1- (line-number-at-pos start-pos)))
-           (end-line (1- (line-number-at-pos end-pos)))
+           (start-line (1- (line-number-at-pos adjusted-start-pos)))
+           (end-line (1- (line-number-at-pos adjusted-end-pos)))
            (start-col (save-excursion
-                        (goto-char start-pos)
+                        (goto-char adjusted-start-pos)
                         (current-column)))
            (end-col (save-excursion
-                      (goto-char end-pos)
+                      (goto-char adjusted-end-pos)
                       (current-column)))
            (selection `((start . ((line . ,start-line)
                                   (character . ,start-col)))
                         (end . ((line . ,end-line)
                                 (character . ,end-col)))
-                        (isEmpty . ,(if (use-region-p) :json-false t))))
+                        (isEmpty . ,(if (or (use-region-p) in-evil-visual-line) :json-false t))))
            (file-url (concat "file://" file-path)))
       `((text . ,text)
         (filePath . ,file-path)
