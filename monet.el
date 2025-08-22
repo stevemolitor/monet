@@ -1329,6 +1329,7 @@ Returns the window displaying the diff buffer."
                     (not (string= originating-tab current-tab)))
                (and originating-frame
                     (not (eq originating-frame current-frame)))))
+      (message "Diff created but not displayed (do-not-disturb mode)")
       nil)  ; Don't display the buffer
      ;; If we have an originating tab, try to display in that tab
      (originating-tab
