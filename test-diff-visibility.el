@@ -1,8 +1,14 @@
-;;; test-diff-visibility.el --- Test script for context-aware diff hiding
+;;; test-diff-visibility.el --- Test script for context-aware diff hiding  -*- lexical-binding: t; -*-
 
 ;; This test demonstrates the context-aware diff hiding feature
 
-;;; Test Setup
+;;; Commentary:
+
+;; This test script verifies the context-aware diff hiding functionality
+;; in monet.el.  It tests whether diffs are properly shown/hidden based
+;; on the current buffer context.
+
+;;; Code:
 (require 'monet)
 
 ;; Enable the feature
@@ -38,9 +44,9 @@
     
     ;; Test 1: Check if buffer is relevant to session
     (message "\nTest 1: Buffer relevance check")
-    (message "  Buffer in session dir: %s" 
-             (monet--is-buffer-relevant-to-session-p 
-              test-buffer 
+    (message "  Buffer in session dir: %s"
+             (monet--is-buffer-relevant-to-session-p
+              test-buffer
               "/Users/steve/repos/monet"
               "/Users/steve/repos/monet/test.el"))
     
