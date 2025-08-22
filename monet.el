@@ -1,7 +1,7 @@
 ;;; monet.el  --- Claude Code MCP over websockets   -*- lexical-binding:t -*-
 
 ;; Author: Stephen Molitor <stevemolitor@gmail.com>
-;; Version: 0.0.1
+;; Version: 0.0.2
 ;; Package-Requires: ((emacs "30.0") (websocket "1.15"))
 ;; Keywords: tools, ai
 ;; URL: https://github.com/stevemolitor/monet
@@ -40,7 +40,8 @@ Set to nil to not bind any prefix key."
   :group 'monet)
 
 (defgroup monet-tool nil
-  "Tool configuration for Monet."
+  "Tool configuration for Monet.
+These settings control which MCP tools are available to Claude Code."
   :group 'monet
   :prefix "monet-")
 
@@ -49,8 +50,10 @@ Set to nil to not bind any prefix key."
 The function should have the signature:
   (old-file-path new-file-path new-file-contents on-accept on-quit)
 where ON-ACCEPT and ON-QUIT are no-argument callbacks.
-It should return the created diff buffer."
-  :type 'function
+It should return the created diff buffer.
+Set to nil to disable diff functionality entirely."
+  :type '(choice (function :tag "Diff function")
+                 (const :tag "Disable diff tools" nil))
   :group 'monet-tool)
 
 (defcustom monet-diff-cleanup-tool 'monet-simple-diff-cleanup-tool
@@ -705,8 +708,8 @@ This is sent when Claude Code has successfully connected to the IDE."
   "Return the handler function for tool NAME."
   (pcase name
     ("getCurrentSelection" #'monet--tool-get-current-selection-handler)
-    ("openDiff" #'monet--tool-open-diff-handler)
-    ("closeAllDiffTabs" #'monet--tool-close-all-diff-tabs-handler)
+    ("openDiff" (when monet-diff-tool #'monet--tool-open-diff-handler))
+    ("closeAllDiffTabs" (when monet-diff-tool #'monet--tool-close-all-diff-tabs-handler))
     ("close_tab" #'monet--tool-close-tab-handler)
     ("openFile" #'monet--tool-open-file-handler)
     ("saveDocument" #'monet--tool-save-document-handler)
@@ -927,62 +930,70 @@ _SESSION is unused."
 ;;; MCP Over Websockets Implementation
 (defun monet--get-tools-list ()
   "Return the list of available MCP tools."
-  (vector
-   `((name . "getCurrentSelection")
-     (description . "Get the current text selection or cursor position in the active editor")
-     (inputSchema . ((type . "object")
-                     (properties . ()))))
-   `((name . "openFile")
-     (description . "Open a file in the editor. <important>Do NOT use emacs or emacsclient to open a file. Use this IDE openFile tool to open a file in the editor / Emacs / IDE.")
-     (inputSchema . ((type . "object")
-                     (properties . ((uri . ((type . "string")
-                                            (description . "The file URI or path to open")))))
-                     (required . ["uri"]))))
-   `((name . "openDiff")
-     (description . "Open a diff view")
-     (inputSchema . ((type . "object")
-                     (properties . ((old_file_path . ((type . "string")))
-                                    (new_file_path . ((type . "string")))
-                                    (new_file_contents . ((type . "string")))
-                                    (tab_name . ((type . "string")))))
-                     (required . ["old_file_path" "new_file_path" "new_file_contents"]))))
-   `((name . "closeAllDiffTabs")
-     (description . "Close all diff tabs")
-     (inputSchema . ((type . "object")
-                     (properties . ()))))
-   `((name . "close_tab")
-     (description . "Close a tab")
-     (inputSchema . ((type . "object")
-                     (properties . ((tab_name . ((type . "string")))))
-                     (required . ["tab_name"]))))
-   `((name . "getDiagnostics")
-     (description . "Get diagnostics for a file. <important>Unless told otherwise, do NOT use external commands, typecheckers, or lint tools to get diagnostics, errors, or warnings. Use this getDiagnostics IDE tool</important>")
-     (inputSchema . ((type . "object")
-                     (properties . ((uri . ((type . "string"))))))))
-   `((name . "getOpenEditors")
-     (description . "Get the list of currently open files in the editor")
-     (inputSchema . ((type . "object")
-                     (properties . ()))))
-   `((name . "getWorkspaceFolders")
-     (description . "Get the list of workspace folders (project directories)")
-     (inputSchema . ((type . "object")
-                     (properties . ()))))
-   `((name . "checkDocumentDirty")
-     (description . "Check if a document has unsaved changes")
-     (inputSchema . ((type . "object")
-                     (properties . ((uri . ((type . "string")
-                                            (description . "The file URI or path to check")))))
-                     (required . ["uri"]))))
-   `((name . "saveDocument")
-     (description . "Save a document to disk")
-     (inputSchema . ((type . "object")
-                     (properties . ((uri . ((type . "string")
-                                            (description . "The file URI or path to save")))))
-                     (required . ["uri"]))))
-   `((name . "getLatestSelection")
-     (description . "Get the latest text selection from any file")
-     (inputSchema . ((type . "object")
-                     (properties . ()))))))
+  (let ((tools
+         (list
+          `((name . "getCurrentSelection")
+            (description . "Get the current text selection or cursor position in the active editor")
+            (inputSchema . ((type . "object")
+                            (properties . ()))))
+          `((name . "openFile")
+            (description . "Open a file in the editor. <important>Do NOT use emacs or emacsclient to open a file. Use this IDE openFile tool to open a file in the editor / Emacs / IDE.")
+            (inputSchema . ((type . "object")
+                            (properties . ((uri . ((type . "string")
+                                                   (description . "The file URI or path to open")))))
+                            (required . ["uri"]))))
+          `((name . "close_tab")
+            (description . "Close a tab")
+            (inputSchema . ((type . "object")
+                            (properties . ((tab_name . ((type . "string")))))
+                            (required . ["tab_name"]))))
+          `((name . "getDiagnostics")
+            (description . "Get diagnostics for a file. <important>Unless told otherwise, do NOT use external commands, typecheckers, or lint tools to get diagnostics, errors, or warnings. Use this getDiagnostics IDE tool</important>")
+            (inputSchema . ((type . "object")
+                            (properties . ((uri . ((type . "string"))))))))
+          `((name . "getOpenEditors")
+            (description . "Get the list of currently open files in the editor")
+            (inputSchema . ((type . "object")
+                            (properties . ()))))
+          `((name . "getWorkspaceFolders")
+            (description . "Get the list of workspace folders (project directories)")
+            (inputSchema . ((type . "object")
+                            (properties . ()))))
+          `((name . "checkDocumentDirty")
+            (description . "Check if a document has unsaved changes")
+            (inputSchema . ((type . "object")
+                            (properties . ((uri . ((type . "string")
+                                                   (description . "The file URI or path to check")))))
+                            (required . ["uri"]))))
+          `((name . "saveDocument")
+            (description . "Save a document to disk")
+            (inputSchema . ((type . "object")
+                            (properties . ((uri . ((type . "string")
+                                                   (description . "The file URI or path to save")))))
+                            (required . ["uri"]))))
+          `((name . "getLatestSelection")
+            (description . "Get the latest text selection from any file")
+            (inputSchema . ((type . "object")
+                            (properties . ())))))))
+    ;; Add diff-related tools only if monet-diff-tool is not nil
+    (when monet-diff-tool
+      (setq tools
+            (append tools
+                    (list
+                     `((name . "openDiff")
+                       (description . "Open a diff view")
+                       (inputSchema . ((type . "object")
+                                       (properties . ((old_file_path . ((type . "string")))
+                                                      (new_file_path . ((type . "string")))
+                                                      (new_file_contents . ((type . "string")))
+                                                      (tab_name . ((type . "string")))))
+                                       (required . ["old_file_path" "new_file_path" "new_file_contents"]))))
+                     `((name . "closeAllDiffTabs")
+                       (description . "Close all diff tabs")
+                       (inputSchema . ((type . "object")
+                                       (properties . ()))))))))
+    ;; Convert to vector
+    (apply #'vector tools)))
 
 ;; Resource definitions
 (defun monet--get-file-resources (&optional cursor)

@@ -205,6 +205,16 @@ You can customize how Monet displays diffs by providing your own diff tool funct
 
 The diff tool function should take: `(old-file-path new-file-path new-file-contents on-accept on-quit)` and return a context object. The cleanup function takes that context object for cleanup.
 
+#### Disabling Diff Tools
+
+To disable Monet's diff functionality entirely and use Claude's built-in diff display instead:
+
+```elisp
+(setq monet-diff-tool nil)
+```
+
+When disabled, Claude will show proposed changes in its native interface rather than creating diff views in Emacs.
+
 ## How It Works
 
 Monet creates a WebSocket server that Claude Code connects to via MCP. This allows Claude to:
