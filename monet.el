@@ -109,13 +109,6 @@ the diff request."
   :type 'boolean
   :group 'monet-tool)
 
-(defcustom monet-do-not-disturb nil
-  "When non-nil, don't display diff buffers in tabs other than the originating tab.
-If the current tab is different from the tab where the Claude session was started,
-the diff buffer will not be displayed (though it remains accessible in the Claude buffer)."
-  :type 'boolean
-  :group 'monet-tool)
-
 (defcustom monet-get-current-selection-tool 'monet-default-get-current-selection-tool
   "Function to use for getting the current text selection.
 The function should have the signature:
@@ -268,10 +261,17 @@ The MCP response should be a list of content objects."
              return port
              finally (error "No free ports available"))))
 
+(defun monet--get-lockfile-dir ()
+  "Get the lockfile directory path, handling Windows correctly."
+  (let ((home-dir (if (eq system-type 'windows-nt)
+                      (getenv "USERPROFILE")
+                    (expand-file-name "~"))))
+    (expand-file-name ".claude/ide/" home-dir)))
+
 (defun monet--remove-lockfile (port)
   "Remove lock file for PORT."
   (when port
-    (let* ((dir (expand-file-name "~/.claude/ide/"))
+    (let* ((dir (monet--get-lockfile-dir))
            (file (expand-file-name (format "%d.lock" port) dir)))
       (when (file-exists-p file)
         (condition-case err
@@ -282,7 +282,7 @@ The MCP response should be a list of content objects."
 (defun monet--create-lockfile (folder port auth-token session-key)
   "Create lock file for claude running in FOLDER for PORT with AUTH-TOKEN and SESSION-KEY."
   (condition-case err
-      (let* ((dir (expand-file-name "~/.claude/ide/"))
+      (let* ((dir (monet--get-lockfile-dir))
              (file (expand-file-name (format "%d.lock" port) dir))
              (content (json-encode
                        `((pid . ,(emacs-pid))
@@ -1304,23 +1304,12 @@ ON-ACCEPT and ON-QUIT are the callbacks to execute."
 (defun monet--display-diff-buffer (diff-buffer &optional session)
   "Display DIFF-BUFFER in appropriate frame and tab context.
 When SESSION is provided and has an originating-tab, displays in that tab.
-If `monet-do-not-disturb' is non-nil and current tab or frame differs from
-originating tab or frame, the diff buffer is not displayed at all.
 Otherwise uses default display behavior.
 Returns the window displaying the diff buffer."
   (let* ((originating-tab (when session
                             (monet--session-originating-tab session)))
-         (originating-frame (when session
-                              (monet--session-originating-frame session)))
-         (current-tab (when (and (fboundp 'tab-bar-mode) tab-bar-mode
-                                 (fboundp 'tab-bar--current-tab))
-                        (let ((tab (tab-bar--current-tab)))
-                          (when tab
-                            (alist-get 'name tab)))))
-         (current-frame (selected-frame))
          (display-action '((display-buffer-pop-up-window))))
     
-    ;; Check if we should skip display due to do-not-disturb mode
     (cond
      ;; If do-not-disturb is on and we're in a different tab or frame, don't display
      ((and monet-do-not-disturb
