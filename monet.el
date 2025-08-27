@@ -268,10 +268,17 @@ The MCP response should be a list of content objects."
              return port
              finally (error "No free ports available"))))
 
+(defun monet--get-lockfile-dir ()
+  "Get the lockfile directory path, handling Windows correctly."
+  (let ((home-dir (if (eq system-type 'windows-nt)
+                      (getenv "USERPROFILE")
+                    (expand-file-name "~"))))
+    (expand-file-name ".claude/ide/" home-dir)))
+
 (defun monet--remove-lockfile (port)
   "Remove lock file for PORT."
   (when port
-    (let* ((dir (expand-file-name "~/.claude/ide/"))
+    (let* ((dir (monet--get-lockfile-dir))
            (file (expand-file-name (format "%d.lock" port) dir)))
       (when (file-exists-p file)
         (condition-case err
@@ -282,7 +289,7 @@ The MCP response should be a list of content objects."
 (defun monet--create-lockfile (folder port auth-token session-key)
   "Create lock file for claude running in FOLDER for PORT with AUTH-TOKEN and SESSION-KEY."
   (condition-case err
-      (let* ((dir (expand-file-name "~/.claude/ide/"))
+      (let* ((dir (monet--get-lockfile-dir))
              (file (expand-file-name (format "%d.lock" port) dir))
              (content (json-encode
                        `((pid . ,(emacs-pid))
