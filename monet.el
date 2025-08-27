@@ -109,6 +109,13 @@ the diff request."
   :type 'boolean
   :group 'monet-tool)
 
+(defcustom monet-do-not-disturb nil
+  "When non-nil, don't display diff buffers in tabs other than the originating tab.
+If the current tab is different from the tab where the Claude session was started,
+the diff buffer will not be displayed (though it remains accessible in the Claude buffer)."
+  :type 'boolean
+  :group 'monet-tool)
+
 (defcustom monet-get-current-selection-tool 'monet-default-get-current-selection-tool
   "Function to use for getting the current text selection.
 The function should have the signature:
@@ -1304,12 +1311,23 @@ ON-ACCEPT and ON-QUIT are the callbacks to execute."
 (defun monet--display-diff-buffer (diff-buffer &optional session)
   "Display DIFF-BUFFER in appropriate frame and tab context.
 When SESSION is provided and has an originating-tab, displays in that tab.
+If `monet-do-not-disturb' is non-nil and current tab or frame differs from
+originating tab or frame, the diff buffer is not displayed at all.
 Otherwise uses default display behavior.
 Returns the window displaying the diff buffer."
   (let* ((originating-tab (when session
                             (monet--session-originating-tab session)))
+         (originating-frame (when session
+                              (monet--session-originating-frame session)))
+         (current-tab (when (and (fboundp 'tab-bar-mode) tab-bar-mode
+                                 (fboundp 'tab-bar--current-tab))
+                        (let ((tab (tab-bar--current-tab)))
+                          (when tab
+                            (alist-get 'name tab)))))
+         (current-frame (selected-frame))
          (display-action '((display-buffer-pop-up-window))))
     
+    ;; Check if we should skip display due to do-not-disturb mode
     (cond
      ;; If do-not-disturb is on and we're in a different tab or frame, don't display
      ((and monet-do-not-disturb
@@ -1319,7 +1337,7 @@ Returns the window displaying the diff buffer."
                (and originating-frame
                     (not (eq originating-frame current-frame)))))
       (message "Diff created but not displayed (do-not-disturb mode)")
-      nil)
+      nil)  ; Don't display the buffer
      ;; If we have an originating tab, try to display in that tab
      (originating-tab
       (display-buffer diff-buffer `((display-buffer-in-tab display-buffer-pop-up-window)
