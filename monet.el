@@ -1378,7 +1378,7 @@ Returns the diff context object for later used by the cleanup tool."
     ;; Create the diff
     (let* ((diff-buffer-name (format "*Diff: %s*" (file-name-nondirectory old-file-path)))
            (diff-buffer (get-buffer-create diff-buffer-name t))
-           (switches `("-u" "--label" ,old-file-path "--label" ,(or new-file-path old-file-path)))
+           (switches `("-u" "--label" ,(shell-quote-argument old-file-path) "--label" ,(shell-quote-argument (or new-file-path old-file-path))))
            ;; syntax highlighting
            (diff-font-lock-syntax 'hunk-also)
            (diff-font-lock-prettify t)
