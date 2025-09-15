@@ -1202,8 +1202,8 @@ This is called from `post-command-hook'."
            (text (if (or (use-region-p) in-evil-visual-line)
                      (buffer-substring-no-properties adjusted-start-pos adjusted-end-pos)
                    ""))
-           (start-line (1- (line-number-at-pos adjusted-start-pos)))
-           (end-line (1- (line-number-at-pos adjusted-end-pos)))
+           (start-line (1- (line-number-at-pos adjusted-start-pos t)))
+           (end-line (1- (line-number-at-pos adjusted-end-pos t)))
            (start-col (save-excursion
                         (goto-char adjusted-start-pos)
                         (current-column)))
@@ -1798,8 +1798,8 @@ If URI is nil, gets diagnostics for all open files."
                        (end (flymake-diagnostic-end diag))
                        (type (flymake-diagnostic-type diag))
                        (text (flymake-diagnostic-text diag))
-                       (start-line (1- (line-number-at-pos beg)))
-                       (end-line (1- (line-number-at-pos end)))
+                       (start-line (1- (line-number-at-pos beg t)))
+                       (end-line (1- (line-number-at-pos end t)))
                        (start-char (save-excursion
                                      (goto-char beg)
                                      (current-column)))
