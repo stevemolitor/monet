@@ -646,6 +646,7 @@ Returns the session object."
        (message "Failed to start MCP server: %s" (error-message-string err))
        nil))))
 
+;;;###autoload
 (defun monet-start-server-function (key directory)
   "Start a Monet server with KEY in DIRECTORY.
 
