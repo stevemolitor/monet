@@ -1325,7 +1325,8 @@ Returns the window displaying the diff buffer."
                           (when tab
                             (alist-get 'name tab)))))
          (current-frame (selected-frame))
-         (display-action '((display-buffer-pop-up-window))))
+         (display-action '((display-buffer-pop-up-window)
+                           (inhibit-same-window . t))))
     
     ;; Check if we should skip display due to do-not-disturb mode
     (cond
@@ -1341,7 +1342,8 @@ Returns the window displaying the diff buffer."
      ;; If we have an originating tab, try to display in that tab
      (originating-tab
       (display-buffer diff-buffer `((display-buffer-in-tab display-buffer-pop-up-window)
-                                    (tab-name . ,originating-tab))))
+                                    (tab-name . ,originating-tab)
+                                    (inhibit-same-window . t))))
      ;; No tab context, use default behavior
      (t
       (display-buffer diff-buffer display-action)))))
