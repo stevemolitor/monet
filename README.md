@@ -155,6 +155,9 @@ You can start multiple sessions per project, or have multiple
 
 ;; Change ediff window split direction
 (setq monet-ediff-split-window-direction 'vertical)  ; Default: 'horizontal
+
+;; Ignore whitespace changes in diffs (helpful for line ending differences)
+(setq monet-diff-ignore-whitespace t)  ; Default: nil
 ```
 
 #### Customizing MCP Tools

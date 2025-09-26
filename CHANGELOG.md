@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.4]
+
+### Added
+  - `monet-diff-ignore-whitespace` configuration option to ignore whitespace changes in diffs
+  - Helps reduce noise from line ending differences between different operating systems
+  - When enabled, uses `-w` flag with diff command
+
 ## [0.0.3]
 
 ### Fixed
