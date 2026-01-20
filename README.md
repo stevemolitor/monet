@@ -89,7 +89,7 @@ When claude-code.el starts a new session it will start and associate a Monet ses
 
 ### Session Management
 
-Sessions are automatically cleaned up (killed) when you exit the associated Claude session. When you exit Emacs all sessions are cleaned up. You can stop a session manually via `monet-stop-server` (`C-c q`).
+Sessions are automatically cleaned up (killed) when you exit the associated Claude session. Set `monet-persist-sessions` to `t` to keep sessions alive after Claude disconnects. When you exit Emacs all sessions are cleaned up. You can stop a session manually via `monet-stop-server` (`C-c q`).
 
 ### Example
 
@@ -155,6 +155,9 @@ You can start multiple sessions per project, or have multiple
 
 ;; Change ediff window split direction
 (setq monet-ediff-split-window-direction 'vertical)  ; Default: 'horizontal
+
+;; Keep sessions alive after Claude Code disconnects
+(setq monet-persist-sessions t)  ; Default: nil
 ```
 
 #### Customizing MCP Tools
