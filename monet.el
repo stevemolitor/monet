@@ -443,10 +443,10 @@ Searches all sessions for the deferred response."
   (run-with-idle-timer 2 nil (lambda () (message nil))))
 
 (defun monet--ping (client)
-  "Send tools/list_changed notification as keepalive to CLIENT."
-  (monet--send-notification
-   client
-   "notifications/tools/list_changed"))
+  "Send WebSocket ping frame as keepalive to CLIENT."
+  (websocket-send client
+                  (make-websocket-frame :opcode 'ping
+                                        :completep t)))
 
 (defun monet--start-ping-timer (session)
   "Start periodic ping timer for SESSION."
