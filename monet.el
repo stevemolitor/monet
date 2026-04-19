@@ -1,4 +1,4 @@
-;;; monet.el  --- Claude Code MCP over websockets   -*- lexical-binding:t -*-
+;;; monet.el --- Claude Code MCP over websockets   -*- lexical-binding:t -*-
 
 ;; Author: Stephen Molitor <stevemolitor@gmail.com>
 ;; Version: 0.0.3
