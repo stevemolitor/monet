@@ -190,6 +190,16 @@ The MCP response should be a list of content objects."
   :type 'function
   :group 'monet-tool)
 
+(defcustom monet-after-mention-hook nil
+  "Hook run after sending an at_mentioned notification to Claude.
+Each function in the hook is called with one argument:
+  FILE-PATH - the file path that was mentioned
+
+This can be used to perform additional actions like focusing terminal
+with claude."
+  :type 'hook
+  :group 'monet-tool)
+
 ;;; Constants
 (defconst monet-version "0.0.1")
 (defconst monet--port-min 10000 "Minimum port number for WebSocket server.")
@@ -2095,6 +2105,56 @@ sessions. KEY is the session identifier."
 ;; Register cleanup on Emacs exit
 (add-hook 'kill-emacs-hook #'monet-stop-all-servers)
 
+;;; at_mentioned support
+(defun monet--send-at-mentioned (file-path line-start line-end)
+  "Send at_mentioned notification for FILE-PATH from LINE-START to LINE-END.
+This notifies Claude that the user has explicitly mentioned this content as context."
+  ;; Find the session for this file
+  (let* ((context (monet--get-session-context))
+         (session-key (car context))
+         (session (monet--get-session session-key)))
+    (if (and session
+             (monet--session-initialized session)
+             (monet--session-client session))
+        (let ((params `((filePath . ,file-path)
+                        (lineStart . ,line-start)
+                        (lineEnd . ,line-end))))
+          (monet--send-notification
+           (monet--session-client session)
+           "at_mentioned"
+           params))
+      (user-error "No active Claude Code session found for file: %s" file-path))))
+
+(defun monet-mention-region ()
+  "Send the current selection or current line as at_mentioned to Claude.
+If there's an active region, sends the selected lines.
+If no region is active, sends the current line.
+This explicitly provides context to Claude Code."
+  (interactive)
+  (unless buffer-file-name
+    (user-error "Buffer must be visiting a file to mention to Claude"))
+
+  (let* ((start-pos (if (use-region-p) (region-beginning) (line-beginning-position)))
+          (end-pos (if (use-region-p) (region-end) (line-end-position)))
+          (line-start (line-number-at-pos start-pos))
+          (line-end (line-number-at-pos end-pos))
+          (file-path buffer-file-name)
+          (num-lines (1+ (- line-end line-start))))
+
+    ;; Send the at_mentioned notification
+    (monet--send-at-mentioned file-path line-start line-end)
+
+    (run-hook-with-args 'monet-after-mention-hook file-path)
+
+    ;; Provide user feedback
+    (if (use-region-p)
+      (progn
+        (deactivate-mark)
+        (message "Sent %d lines (%d-%d) from %s to Claude Code"
+          num-lines line-start line-end (file-name-nondirectory file-path)))
+      (message "Sent line %d from %s to Claude Code"
+        line-start (file-name-nondirectory file-path)))))
+
 ;;; Minor Mode
 (defvar monet-command-map
   (let ((map (make-sparse-keymap)))
@@ -2104,6 +2164,7 @@ sessions. KEY is the session identifier."
     (define-key map "l" #'monet-list-sessions)
     (define-key map "L" #'monet-enable-logging)
     (define-key map "D" #'monet-disable-logging)
+    (define-key map "m" #'monet-mention-region)
     map)
   "Keymap for Monet mode commands under the prefix key.")
 

@@ -107,6 +107,7 @@ When `monet-mode` is enabled, the following key bindings are available (default 
 - `C-c m l` - List active sessions
 - `C-c m L` - Enable logging
 - `C-c m D` - Disable logging
+- `C-c m m` - Mention selected region in Claude prompt (monet-after-mention-hook is called)
 
 ### Using the Diff Tools
 
