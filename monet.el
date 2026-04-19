@@ -543,6 +543,9 @@ If PARAMS is not provided, uses an empty hash table."
           ;; Prompts listing (empty for now)
           ("prompts/list"
            (monet--send-response ws id '((prompts . []))))
+          ;; Resource templates listing (empty for now)
+          ("resources/templates/list"
+           (monet--send-response ws id '((resourceTemplates . []))))
           ;; Resources listing
           ("resources/list"
            (monet--handle-resources-list session ws id params))
