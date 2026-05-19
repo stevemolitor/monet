@@ -116,6 +116,14 @@ the diff buffer will not be displayed (though it remains accessible in the Claud
   :type 'boolean
   :group 'monet-tool)
 
+(defcustom monet-persist-sessions nil
+  "When non-nil, keep sessions alive after Claude Code disconnects.
+Sessions will persist until manually stopped with `monet-stop-server'
+or Emacs exits. This allows reconnecting to the same server with a
+new Claude Code session."
+  :type 'boolean
+  :group 'monet)
+
 (defcustom monet-get-current-selection-tool 'monet-default-get-current-selection-tool
   "Function to use for getting the current text selection.
 The function should have the signature:
@@ -580,21 +588,26 @@ claude later."
 (defun monet--on-close-server (session _ws)
   "Handle WebSocket WS close for SESSION.
 
-Remove SESSION from `monet--sessions'."
-  (let ((key (monet--session-key session))
-        (port (monet--session-port session)))
-    ;; Remove lockfile
-    (monet--remove-lockfile port)
-    ;; Remove session
-    (remhash key monet--sessions)
-    ;; Remove hooks if no more sessions
-    (when (= 0 (hash-table-count monet--sessions))
-      (remove-hook 'post-command-hook #'monet--track-selection-change)
-      (remove-hook 'post-command-hook #'monet--track-diff-visibility)
-      ;; Cancel visibility timer if active
-      (when monet--diff-visibility-timer
-        (cancel-timer monet--diff-visibility-timer)
-        (setq monet--diff-visibility-timer nil)))))
+When `monet-persist-sessions' is nil, remove SESSION from `monet--sessions'.
+When non-nil, keep the session alive to allow reconnection."
+  (if monet-persist-sessions
+      ;; Keep session alive, just clear the client
+      (setf (monet--session-client session) nil)
+    ;; Default behavior: full cleanup
+    (let ((key (monet--session-key session))
+          (port (monet--session-port session)))
+      ;; Remove lockfile
+      (monet--remove-lockfile port)
+      ;; Remove session
+      (remhash key monet--sessions)
+      ;; Remove hooks if no more sessions
+      (when (= 0 (hash-table-count monet--sessions))
+        (remove-hook 'post-command-hook #'monet--track-selection-change)
+        (remove-hook 'post-command-hook #'monet--track-diff-visibility)
+        ;; Cancel visibility timer if active
+        (when monet--diff-visibility-timer
+          (cancel-timer monet--diff-visibility-timer)
+          (setq monet--diff-visibility-timer nil))))))
 
 (defun monet--on-error-server (session _ws action error)
   "Handle WebSocket error for SESSION with WS during ACTION with ERROR."
