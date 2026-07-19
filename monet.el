@@ -2160,17 +2160,16 @@ This explicitly provides context to Claude Code."
         line-start (file-name-nondirectory file-path)))))
 
 ;;; Minor Mode
-(defvar monet-command-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map "s" #'monet-start-server)
-    (define-key map "q" #'monet-stop-server)
-    (define-key map "Q" #'monet-stop-all-servers)
-    (define-key map "l" #'monet-list-sessions)
-    (define-key map "L" #'monet-enable-logging)
-    (define-key map "D" #'monet-disable-logging)
-    (define-key map "m" #'monet-mention-region)
-    map)
-  "Keymap for Monet mode commands under the prefix key.")
+(defvar-keymap monet-command-map
+  :doc "Keymap for Monet mode commands."
+  :prefix t
+  "s" #'monet-start-server
+  "q" #'monet-stop-server
+  "Q" #'monet-stop-all-servers
+  "l" #'monet-list-sessions
+  "L" #'monet-enable-logging
+  "D" #'monet-disable-logging
+  "m" #'monet-mention-region)
 
 (defun monet--make-mode-map ()
   "Create the mode map with the configured prefix key."
